@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 import torch
 import torch.nn as nn
 
 from .config import ModalityConfig, PRISMConfig
 from .modules.block import BlockState, build_block, forward_block
+
+logger = logging.getLogger(__name__)
 
 
 class ModalityProjection(nn.Module):
@@ -93,6 +97,16 @@ class PRISMForClassification(nn.Module):
         labels: torch.Tensor | None = None,
         states: list[BlockState | None] | None = None,
     ) -> dict:
+        # validate modality and input shape
+        mcfg = next((m for m in self.cfg.modalities if m.name == modality), None)
+        if mcfg is None:
+            raise KeyError(f"Unknown modality '{modality}'. Registered: {[m.name for m in self.cfg.modalities]}")
+        if x.shape[-1] != mcfg.input_dim:
+            raise ValueError(
+                f"Input last dim {x.shape[-1]} does not match "
+                f"expected {mcfg.input_dim} for modality '{modality}'"
+            )
+
         # 1. projection
         x = self.projection(x, modality)          # [B, T, hidden_dim]
 
