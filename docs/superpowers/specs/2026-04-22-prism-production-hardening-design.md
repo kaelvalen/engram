@@ -37,6 +37,7 @@ prism/logging.py
 ```
 
 Logger hierarchy:
+
 - `prism` — root
 - `prism.data` — data loading events
 - `prism.training` — epoch metrics, checkpoints
@@ -45,6 +46,7 @@ Logger hierarchy:
 Each module gets its own logger via `logging.getLogger(__name__)`. `setup_logging()` called once in `prism/training/cli.py` entry point.
 
 **Changes:**
+
 - `prism/logging.py` — new
 - `prism/__init__.py` — export `setup_logging`
 - `prism/training/cli.py` — add `--log-level` arg, call `setup_logging()`
@@ -137,23 +139,27 @@ def load_yaml_config(path):
 Target: ~25-30 new tests covering previously untested code paths.
 
 #### `tests/test_training.py` (new)
+
 - Single-batch `train_epoch` completes without error
 - Single-batch `evaluate_epoch` returns accuracy in [0, 1]
 - Trainer runs 1 epoch end-to-end (image, synthetic data)
 - Checkpoint saved after epoch contains required keys
 
 #### `tests/test_checkpoint.py` (extend existing)
+
 - `load_checkpoint` raises `ValueError` on missing `model_state`
 - `load_checkpoint` raises `ValueError` on missing `cfg`
 - Valid checkpoint roundtrip (save → load → keys present)
 
 #### `tests/test_data.py` (new)
+
 - ECG loader logs warning and continues on single bad record
 - ECG loader raises `RuntimeError` when >10% records fail
 - CIFAR patchify raises if `image_size % patch_size != 0`
 - Audio synthetic dataset is deterministic (same seed → same data)
 
 #### `tests/test_model_validation.py` (new)
+
 - `forward()` raises `ValueError` on wrong input dim
 - `forward()` raises `KeyError` on unknown modality
 - `forward()` handles batch size 1
@@ -161,6 +167,7 @@ Target: ~25-30 new tests covering previously untested code paths.
 - NaN input propagates (output contains NaN) — confirms no silent masking
 
 #### `tests/test_cli.py` (new)
+
 - `--log-level DEBUG` sets logger level correctly
 - YAML config with unknown key raises `ValueError`
 - YAML config type override applies correctly (e.g., `epochs: 3`)
@@ -181,25 +188,27 @@ Target: ~25-30 new tests covering previously untested code paths.
 
 ## Files Created / Modified
 
-| File | Action |
-|------|--------|
-| `prism/logging.py` | Create |
-| `prism/__init__.py` | Modify — export `setup_logging` |
-| `prism/model.py` | Modify — input shape validation |
-| `prism/training/cli.py` | Modify — `--log-level`, call `setup_logging()` |
-| `prism/training/loops.py` | Modify — replace `print()` |
-| `prism/training/trainer.py` | Modify — replace `print()` |
-| `prism/training/checkpoint.py` | Modify — key validation |
-| `prism/training/yaml_config.py` | Modify — key whitelist |
-| `prism/data/ecg.py` | Modify — error logging + failure gate |
-| `prism/data/image.py` | Modify — replace `print()` |
-| `prism/data/audio.py` | Modify — replace `print()` |
-| `prism/smoke.py` | Modify — replace `print()` |
-| `tests/test_training.py` | Create |
-| `tests/test_data.py` | Create |
-| `tests/test_model_validation.py` | Create |
-| `tests/test_cli.py` | Create |
-| `tests/test_checkpoint.py` | Extend |
+
+| File                             | Action                                         |
+| -------------------------------- | ---------------------------------------------- |
+| `prism/logging.py`               | Create                                         |
+| `prism/__init__.py`              | Modify — export `setup_logging`                |
+| `prism/model.py`                 | Modify — input shape validation                |
+| `prism/training/cli.py`          | Modify — `--log-level`, call `setup_logging()` |
+| `prism/training/loops.py`        | Modify — replace `print()`                     |
+| `prism/training/trainer.py`      | Modify — replace `print()`                     |
+| `prism/training/checkpoint.py`   | Modify — key validation                        |
+| `prism/training/yaml_config.py`  | Modify — key whitelist                         |
+| `prism/data/ecg.py`              | Modify — error logging + failure gate          |
+| `prism/data/image.py`            | Modify — replace `print()`                     |
+| `prism/data/audio.py`            | Modify — replace `print()`                     |
+| `prism/smoke.py`                 | Modify — replace `print()`                     |
+| `tests/test_training.py`         | Create                                         |
+| `tests/test_data.py`             | Create                                         |
+| `tests/test_model_validation.py` | Create                                         |
+| `tests/test_cli.py`              | Create                                         |
+| `tests/test_checkpoint.py`       | Extend                                         |
+
 
 ---
 
@@ -210,3 +219,4 @@ Target: ~25-30 new tests covering previously untested code paths.
 - REST/gRPC serving layer
 - Mixed precision (autocast)
 - HuggingFace `PreTrainedModel` shim
+
