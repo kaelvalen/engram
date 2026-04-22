@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import logging
 import os
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+
+logger = logging.getLogger(__name__)
+
+
+def _check_ecg_failure_rate(failed: list, total: int) -> None:
+    """Raise RuntimeError if the ECG failure rate exceeds 10%."""
+    if total > 0 and len(failed) / total > 0.10:
+        raise RuntimeError(
+            f"ECG loading failure rate {len(failed)}/{total} exceeds 10%. "
+            f"First failed IDs: {failed[:5]}"
+        )
 
 
 class PTBXLDataset(Dataset):
@@ -77,6 +89,7 @@ class PTBXLDataset(Dataset):
 
         folder = f"records{self.sampling_rate}"
         data, labels = [], []
+        failed: list = []
 
         for ecg_id, row in df.iterrows():
             path = os.path.join(self.root, folder, row["filename_lr"]
@@ -84,7 +97,9 @@ class PTBXLDataset(Dataset):
             try:
                 record = wfdb.rdrecord(path)
                 signal = record.p_signal.astype(np.float32)  # [T, 12]
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to load ECG record %s from %s: %s", ecg_id, path, e)
+                failed.append(ecg_id)
                 continue
 
             # window: ilk window_size timestamp al
@@ -101,6 +116,11 @@ class PTBXLDataset(Dataset):
 
             data.append(signal)
             labels.append(row["label"])
+
+        total = len(df)
+        loaded = total - len(failed)
+        logger.info("ECG split=%s: loaded %d/%d records (%d failed)", self.split, loaded, total, len(failed))
+        _check_ecg_failure_rate(failed, total)
 
         return np.stack(data), np.array(labels, dtype=np.int64)
 
