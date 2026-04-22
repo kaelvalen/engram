@@ -1,0 +1,14 @@
+# Optional defaults for `python train.py --config configs/train.example.yaml`
+# CLI flags override these values.
+
+train:
+  epochs: 50
+  batch-size: 64
+  lr: 0.0003
+  hidden-dim: 256
+  num-layers: 12
+  block-pattern: hybrid  # hybrid | s4 | delta
+
+model:
+  num-heads: 8
+  delta-every: 4

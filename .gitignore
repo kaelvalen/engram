@@ -1,0 +1,104 @@
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Packaging / setuptools
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+sdist/
+develop-eggs/
+eggs/
+parts/
+var/
+lib/
+lib64/
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Type checkers & linters
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+.pyre/
+
+# Testing & coverage
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+htmlcov/
+
+# Training / experiment outputs (repo root — avoids shadowing package dirs)
+/output/
+/runs/
+/logs/
+/wandb/
+/tensorboard/
+
+# Downloaded datasets (repo root ONLY). Never use bare `data/` here: it would
+# ignore every folder named `data`, including `prism/data/` (Python package).
+/datasets/
+/data/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.joblib
+events.out.tfevents.*
+
+# Data & datasets (large / local)
+*.csv
+*.parquet
+*.h5
+*.hdf5
+*.npy
+*.npz
+
+# Secrets & local env (never commit)
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# IDE & editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# C extensions / build artifacts
+*.so
+
+# Archives (release artifacts)
+*.tar.gz
+*python.tar.gz
+*.whl
