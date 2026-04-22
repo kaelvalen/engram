@@ -50,5 +50,6 @@ def load_checkpoint(path: str | Path, map_location: str | torch.device | None = 
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
     missing = _REQUIRED_KEYS - set(ckpt.keys())
     if missing:
-        raise ValueError(f"Checkpoint at {str(path)!r} is missing required keys: {missing}")
+        raise ValueError(f"Checkpoint at {str(path)!r} is missing required keys: {sorted(missing)}")
+    logger.debug("Loaded checkpoint from %s (epoch=%s)", path, ckpt.get("epoch"))
     return ckpt
