@@ -18,6 +18,12 @@ from prism.training.checkpoint import save_checkpoint
 from prism.training.loops import cycle_loader, evaluate_epoch
 from prism.training.trainer import Trainer, TrainerConfig
 
+import logging
+
+from prism.logging import setup_logging
+
+logger = logging.getLogger(__name__)
+
 
 def _build_loaders_single(
     args: argparse.Namespace,
@@ -221,9 +227,9 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
         }
         log_scalars(epoch, metrics)
         dt = time.time() - t0
-        print(
-            f"[{epoch:03d}/{args.epochs}] joint train_loss={metrics['train_loss']:.4f} | "
-            f"val acc ecg={acc_e:.4f} img={acc_i:.4f} mean={mean_acc:.4f} | {dt:.1f}s"
+        logger.info(
+            "[%03d/%d] joint train_loss=%.4f | val acc ecg=%.4f img=%.4f mean=%.4f | %.1fs",
+            epoch, args.epochs, metrics["train_loss"], acc_e, acc_i, mean_acc, dt,
         )
 
         if mean_acc > best_mean:
@@ -235,18 +241,25 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
                 cfg=cfg,
                 metrics=metrics,
             )
-            print(f"  saved best_joint.pt (mean val acc={mean_acc:.4f})")
+            logger.info("  saved best_joint.pt (mean val acc=%.4f)", mean_acc)
 
     if writer:
         writer.close()
     if wandb_run:
         wandb_run.finish()
-    print(f"\nJoint training done. Best mean val acc: {best_mean:.4f}")
+    logger.info("Joint training done. Best mean val acc: %.4f", best_mean)
 
 
 def main(argv: list[str] | None = None) -> None:
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(description="PRISM training")
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging verbosity",
+    )
     parser.add_argument("--config", type=str, default=None, help="YAML file with train/model keys")
     parser.add_argument(
         "--mode",
@@ -304,6 +317,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--early-stopping", type=int, default=0, help="patience on val acc; 0=off")
     args = parser.parse_args(argv)
 
+    setup_logging(args.log_level)
+
     _apply_yaml_defaults(args, args.config)
 
     device = torch.device(args.device)
@@ -329,17 +344,20 @@ def main(argv: list[str] | None = None) -> None:
     trainer = Trainer(model, cfg, device=device, tcfg=tcfg)
 
     def on_epoch(epoch: int, m: dict[str, float]) -> None:
-        print(
-            f"[{epoch:03d}/{args.epochs}] "
-            f"train loss: {m['train_loss']:.4f} acc: {m['train_acc']:.4f} | "
-            f"val loss: {m['val_loss']:.4f} acc: {m['val_acc']:.4f}"
+        logger.info(
+            "[%03d/%d] train loss: %.4f acc: %.4f | val loss: %.4f acc: %.4f",
+            epoch, args.epochs,
+            m["train_loss"], m["train_acc"],
+            m["val_loss"], m["val_acc"],
         )
 
-    print(
-        f"PRISM — {modality.upper()} | params: {sum(p.numel() for p in model.parameters()):,} | "
-        f"device: {device} | block_pattern={args.block_pattern}"
+    logger.info(
+        "PRISM — %s | params: %s | device: %s | block_pattern=%s",
+        modality.upper(),
+        f"{sum(p.numel() for p in model.parameters()):,}",
+        device,
+        args.block_pattern,
     )
-    print("-" * 60)
 
     trainer.fit(
         train_loader,
@@ -349,7 +367,7 @@ def main(argv: list[str] | None = None) -> None:
         best_filename=f"best_{modality}.pt",
         epoch_callback=on_epoch,
     )
-    print("\nDone.")
+    logger.info("Done.")
 
 
 if __name__ == "__main__":
