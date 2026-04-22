@@ -6,9 +6,11 @@ from prism.logging import setup_logging
 
 
 def test_setup_logging_sets_debug_level():
+    root = logging.getLogger("prism")
+    root.handlers.clear()
+    root.setLevel(logging.NOTSET)
     setup_logging("DEBUG")
-    logger = logging.getLogger("prism")
-    assert logger.level == logging.DEBUG
+    assert root.level == logging.DEBUG
 
 
 def test_setup_logging_default_is_info():
