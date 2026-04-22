@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import time
@@ -13,14 +14,11 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from prism.config import ModalityConfig, PRISMConfig
 from prism.data.paths import resolve_ptbxl_root
+from prism.logging import setup_logging
 from prism.model import PRISMForClassification
 from prism.training.checkpoint import save_checkpoint
 from prism.training.loops import cycle_loader, evaluate_epoch
 from prism.training.trainer import Trainer, TrainerConfig
-
-import logging
-
-from prism.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
