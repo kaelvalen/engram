@@ -3,12 +3,12 @@
 
 train:
   epochs: 50
-  batch-size: 64
+  batch_size: 64
   lr: 0.0003
-  hidden-dim: 256
-  num-layers: 12
-  block-pattern: hybrid  # hybrid | s4 | delta
+  hidden_dim: 256
+  num_layers: 12
+  block_pattern: hybrid  # hybrid | s4 | delta
 
 model:
-  num-heads: 8
-  delta-every: 4
+  num_heads: 8
+  delta_every: 4

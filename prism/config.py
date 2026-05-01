@@ -52,10 +52,12 @@ class PRISMConfig:
         if self.force_block_type is None:
             assert self.num_layers % self.delta_every == 0, (
                 f"num_layers {self.num_layers} must be divisible by delta_every {self.delta_every}"
-            )        assert self.pool_type in ["mean", "last"], f"Unknown pool_type: {self.pool_type}"        else:
+            )
+        else:
             assert self.force_block_type in ("s4", "delta"), (
                 f"force_block_type must be 's4', 'delta', or None, got {self.force_block_type!r}"
             )
+        assert self.pool_type in ["mean", "last"], f"Unknown pool_type: {self.pool_type}"
 
     @property
     def head_dim(self) -> int:
