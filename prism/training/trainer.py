@@ -19,7 +19,7 @@ from .loops import evaluate_epoch, train_epoch
 class TrainerConfig:
     epochs: int = 50
     lr: float = 3e-4
-    weight_decay: float = 0.01
+    weight_decay: float = 0.05
     max_grad_norm: float = 1.0
     early_stopping_patience: int | None = None  # None = disabled; else val metric
     early_stopping_min_delta: float = 0.0
