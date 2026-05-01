@@ -56,10 +56,12 @@ def parallel_scan(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         idx_l     = idx_r - 2 ** d
         a_l_old   = a[:, :, idx_l].clone()
         b_l_old   = b[:, :, idx_l].clone()
+        
         a[:, :, idx_l] = a[:, :, idx_r]
         b[:, :, idx_l] = b[:, :, idx_r]
-        a[:, :, idx_r] = a[:, :, idx_r] * a_l_old
+        
         b[:, :, idx_r] = a[:, :, idx_r] * b_l_old + b[:, :, idx_r]
+        a[:, :, idx_r] = a[:, :, idx_r] * a_l_old
 
     # shift right by 1 to get inclusive scan, trim padding
     h = torch.roll(b, 1, dims=2)
@@ -149,6 +151,9 @@ class S4SSM(nn.Module):
         H, Dh, N = self.num_heads, self.head_dim, self.state_dim
 
         u  = self.in_proj(x_t).view(B, H, Dh)
+        # Note: We take mean over Dh to reduce to per-head scope.
+        # This is a deliberate simplification for the multi-head SSM,
+        # unlike Mamba which uses per-channel (D-specific) selective step sizes.
         dt = F.softplus(self.dt_proj(x_t)).view(B, H, Dh).mean(dim=-1)  # [B, H]
 
         dA    = dt.unsqueeze(-1).to(torch.complex64) * A.unsqueeze(0)    # [B, H, N]
@@ -184,6 +189,8 @@ class S4SSM(nn.Module):
             gate = F.silu(self.gate_proj(x))
             return self.out_proj(y * gate), h_new
 
+        # Note: Mean over Dh is a deliberate simplification for the multi-head SSM,
+        # reducing per-channel selectivity to per-head selectivity.
         # prefill path: parallel scan over T
         u  = self.in_proj(x).view(B, T, H, Dh).permute(0, 2, 1, 3)     # [B, H, T, Dh]
         dt = F.softplus(self.dt_proj(x)).view(B, T, H, Dh).permute(0, 2, 1, 3)

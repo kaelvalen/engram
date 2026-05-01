@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ModalityProjection(nn.Module):
-    """Her modalite için ayrı Linear(input_dim → hidden_dim)."""
+    """Independent Linear(input_dim -> hidden_dim) projection for each modality."""
 
     def __init__(self, modalities: list[ModalityConfig], hidden_dim: int):
         super().__init__()
@@ -53,7 +53,7 @@ class PRISMBackbone(nn.Module):
 
 
 class PerModalityHead(nn.Module):
-    """Her modalite için ayrı classifier head."""
+    """Independent classifier head for each modality."""
 
     def __init__(self, modalities: list[ModalityConfig], hidden_dim: int):
         super().__init__()
@@ -68,12 +68,12 @@ class PerModalityHead(nn.Module):
 
 class PRISMForClassification(nn.Module):
     """
-    Tam PRISM modeli — sınıflandırma görevi için.
+    Full PRISM model for classification tasks.
 
     Forward:
-        x        : [B, T, input_dim]  — ham sinyal / patch sequence
-        modality : str                — hangi modalite
-        labels   : [B] optional       — CrossEntropy loss hesapla
+        x        : [B, T, input_dim]  — raw signal / patch sequence
+        modality : str                — target modality name
+        labels   : [B] optional       — calculate CrossEntropy loss
 
     Returns:
         dict(logits, loss?)
@@ -113,8 +113,11 @@ class PRISMForClassification(nn.Module):
         # 2. backbone
         x, new_states = self.backbone(x, states)  # [B, T, hidden_dim]
 
-        # 3. mean pooling over sequence
-        x = x.mean(dim=1)                         # [B, hidden_dim]
+        # 3. explicit pooling strategy (mean pooling vs last token)
+        if self.cfg.pool_type == "mean":
+            x = x.mean(dim=1)                     # [B, hidden_dim]
+        elif self.cfg.pool_type == "last":
+            x = x[:, -1, :]                       # [B, hidden_dim]
 
         # 4. norm + head
         x = self.norm[modality](x)

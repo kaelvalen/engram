@@ -9,7 +9,7 @@ from ..config import ModalityConfig
 class PerModalityHead(nn.Module):
     """Per-modality classification head.
     
-    Her modalite için bağımsız Linear(hidden_dim → num_classes).
+    Independent Linear(hidden_dim -> num_classes) for each modality.
     Backbone shared, head modality-specific.
     """
 
