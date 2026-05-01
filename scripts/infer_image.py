@@ -27,8 +27,10 @@ def load_model(checkpoint_path: str, device: torch.device) -> PRISMForClassifica
 
     cfg_data = ckpt.get("cfg")
     if isinstance(cfg_data, dict):
-        modalities = [ModalityConfig(**m) for m in cfg_data.pop("modalities", [])]
-        cfg = PRISMConfig(**cfg_data, modalities=modalities)
+        from copy import deepcopy
+        d = deepcopy(cfg_data)
+        modalities = [ModalityConfig(**m) for m in d.pop("modalities", [])]
+        cfg = PRISMConfig(**d, modalities=modalities)
     elif cfg_data is not None:
         cfg = cfg_data
     else:

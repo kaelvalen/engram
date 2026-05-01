@@ -19,9 +19,14 @@ def parallel_scan(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     returns h: [B, H, T, N] complex
 
     Uses work-efficient parallel scan (Blelloch 1990).
-    All ops are batched tensor ops — no Python loop over T.
+    Combination operator: (A1,B1)⊕(A2,B2) = (A2*A1, A2*B1+B2)
+    Exclusive scan gives b[t] = h[t-1]; inclusive: h[t] = a_orig[t]*b[t] + b_orig[t].
     """
     B, H, T, N = a.shape
+
+    # save originals for inclusive conversion at the end
+    a_orig = a.clone()
+    b_orig = b.clone()
 
     # pad to next power of 2
     T_pad = 1
@@ -35,42 +40,40 @@ def parallel_scan(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
     levels = int(math.log2(T_pad))
 
-    # upsweep
+    # upsweep: pair[r] = pair[l] ⊕ pair[r]
     for d in range(levels):
-        step      = 2 ** (d + 1)
-        idx_r     = torch.arange(step - 1, T_pad, step, device=a.device)
-        idx_l     = idx_r - 2 ** d
-        a_l       = a[:, :, idx_l]
-        b_l       = b[:, :, idx_l]
-        a[:, :, idx_r] = a[:, :, idx_r] * a_l
+        step  = 2 ** (d + 1)
+        idx_r = torch.arange(step - 1, T_pad, step, device=a.device)
+        idx_l = idx_r - 2 ** d
+        a_l   = a[:, :, idx_l]
+        b_l   = b[:, :, idx_l]
+        # b must be updated before a so it uses the original a[r]
         b[:, :, idx_r] = a[:, :, idx_r] * b_l + b[:, :, idx_r]
+        a[:, :, idx_r] = a[:, :, idx_r] * a_l
 
-    # downsweep
-    a = a.clone(); b = b.clone()
+    # downsweep: set root to identity (1, 0) and propagate exclusive scan
+    a = a.clone()
+    b = b.clone()
     a[:, :, -1] = torch.ones (B, H, N, dtype=a.dtype, device=a.device)
     b[:, :, -1] = torch.zeros(B, H, N, dtype=b.dtype, device=b.device)
 
     for d in range(levels - 1, -1, -1):
-        step      = 2 ** (d + 1)
-        idx_r     = torch.arange(step - 1, T_pad, step, device=a.device)
-        idx_l     = idx_r - 2 ** d
-        a_l_old   = a[:, :, idx_l].clone()
-        b_l_old   = b[:, :, idx_l].clone()
-        
+        step    = 2 ** (d + 1)
+        idx_r   = torch.arange(step - 1, T_pad, step, device=a.device)
+        idx_l   = idx_r - 2 ** d
+        a_l_old = a[:, :, idx_l].clone()
+        b_l_old = b[:, :, idx_l].clone()
+
         a[:, :, idx_l] = a[:, :, idx_r]
         b[:, :, idx_l] = b[:, :, idx_r]
-        
-        b[:, :, idx_r] = a[:, :, idx_r] * b_l_old + b[:, :, idx_r]
-        a[:, :, idx_r] = a[:, :, idx_r] * a_l_old
 
-    # shift right by 1 to get inclusive scan, trim padding
-    h = torch.roll(b, 1, dims=2)
-    h[:, :, 0] = 0
-    # add b back: h_t = a_t * h_{t-1} + b_t
-    # after exclusive scan h holds h_{t-1}, now compute h_t
-    h = a * h + b  # this is b after upsweep which already holds cumulative product
+        # new right = parent ⊕ old_left: (A_l*A_parent, A_l*B_parent + B_l)
+        b[:, :, idx_r] = a_l_old * b[:, :, idx_r] + b_l_old
+        a[:, :, idx_r] = a_l_old * a[:, :, idx_r]
 
-    return h[:, :, :T]
+    # b[:, :, :T] is now the exclusive scan where b[t] = h[t-1]
+    # convert to inclusive: h[t] = a_orig[t] * h[t-1] + b_orig[t]
+    return a_orig * b[:, :, :T] + b_orig
 
 
 class S4SSM(nn.Module):
