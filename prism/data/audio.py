@@ -12,7 +12,9 @@ class SyntheticMelPatchDataset(Dataset):
     Each item is ``[num_frames, mel_bins]`` (treated like a 1D signal over time).
     """
 
-    def __init__(self, *, length: int, num_frames: int, mel_bins: int, num_classes: int, seed: int = 0):
+    def __init__(
+        self, *, length: int, num_frames: int, mel_bins: int, num_classes: int, seed: int = 0
+    ):
         super().__init__()
         self.length = length
         self.num_frames = num_frames

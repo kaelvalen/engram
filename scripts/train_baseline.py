@@ -88,7 +88,9 @@ def main() -> None:
     parser.add_argument("--window-size", type=int, default=250)
     parser.add_argument("--patch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=2)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+    )
     parser.add_argument("--output-dir", type=str, default="./output/baselines")
     args = parser.parse_args()
 
@@ -110,7 +112,9 @@ def main() -> None:
     opt = AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     sched = CosineAnnealingLR(opt, T_max=args.epochs)
 
-    print(f"Baseline {args.model} | task={args.task} | params={sum(p.numel() for p in model.parameters()):,}")
+    print(
+        f"Baseline {args.model} | task={args.task} | params={sum(p.numel() for p in model.parameters()):,}"
+    )
     best = 0.0
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()

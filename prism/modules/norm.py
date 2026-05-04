@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization.
-    
+
     Bias yok, sadece scale — transformer'larda standart hale geldi.
     """
 

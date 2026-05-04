@@ -105,9 +105,7 @@ class Trainer:
                 max_grad_norm=self.tcfg.max_grad_norm,
                 loss_log_fn=step_log if self._writer or self._wandb else None,
             )
-            val_loss, val_acc = evaluate_epoch(
-                self.model, val_loader, self.device, modality
-            )
+            val_loss, val_acc = evaluate_epoch(self.model, val_loader, self.device, modality)
             sched.step()
 
             metrics = {

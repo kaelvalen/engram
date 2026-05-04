@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 class ShortCausalConv1d(nn.Module):
     """Kısa causal 1D convolution.
-    
+
     Her token sadece kendini ve önceki (kernel_size-1) token'ı görür.
     Streaming decode için conv_state taşınır.
     """
@@ -27,8 +27,8 @@ class ShortCausalConv1d(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,                        # [B, T, dim]
-        conv_state: torch.Tensor | None = None, # [B, dim, kernel_size-1]
+        x: torch.Tensor,  # [B, T, dim]
+        conv_state: torch.Tensor | None = None,  # [B, dim, kernel_size-1]
     ) -> tuple[torch.Tensor, torch.Tensor]:
         B, T, D = x.shape
         xt = x.transpose(1, 2)  # [B, dim, T]
@@ -42,16 +42,13 @@ class ShortCausalConv1d(nn.Module):
             xt_padded = torch.cat([conv_state, xt], dim=2)
 
         # yeni state: son (kernel_size-1) token
-        new_state = xt_padded[:, :, -(self.kernel_size - 1):]
+        new_state = xt_padded[:, :, -(self.kernel_size - 1) :]
 
         out = self.conv(xt_padded)  # [B, dim, T]
-        out = out.transpose(1, 2)   # [B, T, dim]
+        out = out.transpose(1, 2)  # [B, T, dim]
         return out, new_state
 
     def empty_state(
         self, batch_size: int, device: torch.device, dtype: torch.dtype
     ) -> torch.Tensor:
-        return torch.zeros(
-            batch_size, self.dim, self.kernel_size - 1,
-            device=device, dtype=dtype
-        )
+        return torch.zeros(batch_size, self.dim, self.kernel_size - 1, device=device, dtype=dtype)

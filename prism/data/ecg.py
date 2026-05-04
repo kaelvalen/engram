@@ -21,13 +21,13 @@ def _check_ecg_failure_rate(failed: list, total: int) -> None:
 
 class PTBXLDataset(Dataset):
     """PTB-XL ECG Dataset loader.
-    
+
     Beklenen dizin yapısı:
         root/
             records100/   veya records500/
             ptbxl_database.csv
             scp_statements.csv
-    
+
     Download: https://physionet.org/content/ptb-xl/1.0.3/
     pip install wfdb
     """
@@ -38,17 +38,17 @@ class PTBXLDataset(Dataset):
     def __init__(
         self,
         root: str,
-        split: str = "train",          # "train" | "val" | "test"
-        sampling_rate: int = 100,      # 100 veya 500 Hz
-        window_size: int = 128,        # kaç timestamp per sample
+        split: str = "train",  # "train" | "val" | "test"
+        sampling_rate: int = 100,  # 100 veya 500 Hz
+        window_size: int = 128,  # kaç timestamp per sample
         normalize: bool = True,
     ):
         super().__init__()
-        self.root          = root
-        self.split         = split
+        self.root = root
+        self.split = split
         self.sampling_rate = sampling_rate
-        self.window_size   = window_size
-        self.normalize     = normalize
+        self.window_size = window_size
+        self.normalize = normalize
 
         self.data, self.labels = self._load()
 
@@ -61,6 +61,7 @@ class PTBXLDataset(Dataset):
 
         df = pd.read_csv(os.path.join(self.root, "ptbxl_database.csv"), index_col="ecg_id")
         import ast
+
         df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
 
         # scp_statements'ten superclass mapping yükle
@@ -70,8 +71,11 @@ class PTBXLDataset(Dataset):
         def get_label(codes):
             for code in codes:
                 if code in scp.index:
-                    sc = scp.loc[code, "diagnostic_superclass"] \
-                        if "diagnostic_superclass" in scp.columns else None
+                    sc = (
+                        scp.loc[code, "diagnostic_superclass"]
+                        if "diagnostic_superclass" in scp.columns
+                        else None
+                    )
                     if sc in self.SUPERCLASSES:
                         return self.SUPERCLASSES.index(sc)
             return -1
@@ -92,8 +96,11 @@ class PTBXLDataset(Dataset):
         failed: list = []
 
         for ecg_id, row in df.iterrows():
-            path = os.path.join(self.root, folder, row["filename_lr"]
-                                if self.sampling_rate == 100 else row["filename_hr"])
+            path = os.path.join(
+                self.root,
+                folder,
+                row["filename_lr"] if self.sampling_rate == 100 else row["filename_hr"],
+            )
             try:
                 record = wfdb.rdrecord(path)
                 signal = record.p_signal.astype(np.float32)  # [T, 12]
@@ -104,14 +111,14 @@ class PTBXLDataset(Dataset):
 
             # window: ilk window_size timestamp al
             if signal.shape[0] >= self.window_size:
-                signal = signal[:self.window_size]
+                signal = signal[: self.window_size]
             else:
                 pad = np.zeros((self.window_size - signal.shape[0], 12), dtype=np.float32)
                 signal = np.concatenate([signal, pad], axis=0)
 
             if self.normalize:
                 mean = signal.mean(axis=0, keepdims=True)
-                std  = signal.std(axis=0, keepdims=True) + 1e-8
+                std = signal.std(axis=0, keepdims=True) + 1e-8
                 signal = (signal - mean) / std
 
             data.append(signal)
@@ -119,7 +126,9 @@ class PTBXLDataset(Dataset):
 
         total = len(df)
         loaded = total - len(failed)
-        logger.info("ECG split=%s: loaded %d/%d records (%d failed)", self.split, loaded, total, len(failed))
+        logger.info(
+            "ECG split=%s: loaded %d/%d records (%d failed)", self.split, loaded, total, len(failed)
+        )
         _check_ecg_failure_rate(failed, total)
 
         return np.stack(data), np.array(labels, dtype=np.int64)
@@ -129,7 +138,7 @@ class PTBXLDataset(Dataset):
 
     def __getitem__(self, idx):
         return (
-            torch.from_numpy(self.data[idx]),    # [window_size, 12]
+            torch.from_numpy(self.data[idx]),  # [window_size, 12]
             torch.tensor(self.labels[idx]),
         )
 
@@ -141,11 +150,11 @@ def get_ecg_loaders(
     num_workers: int = 4,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     train = PTBXLDataset(root, "train", window_size=window_size)
-    val   = PTBXLDataset(root, "val",   window_size=window_size)
-    test  = PTBXLDataset(root, "test",  window_size=window_size)
+    val = PTBXLDataset(root, "val", window_size=window_size)
+    test = PTBXLDataset(root, "test", window_size=window_size)
 
     return (
-        DataLoader(train, batch_size=batch_size, shuffle=True,  num_workers=num_workers),
-        DataLoader(val,   batch_size=batch_size, shuffle=False, num_workers=num_workers),
-        DataLoader(test,  batch_size=batch_size, shuffle=False, num_workers=num_workers),
+        DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=num_workers),
+        DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=num_workers),
+        DataLoader(test, batch_size=batch_size, shuffle=False, num_workers=num_workers),
     )

@@ -68,7 +68,9 @@ def get_prism_hf_classes() -> tuple[Type[Any], Type[Any]] | None:
             pcfg = cfg_from_dict(dict(config.prism_cfg_dict))
             self.prism = PRISMForClassification(pcfg)
 
-        def forward(self, x: torch.Tensor, modality: str, labels: torch.Tensor | None = None, **_: Any):
+        def forward(
+            self, x: torch.Tensor, modality: str, labels: torch.Tensor | None = None, **_: Any
+        ):
             return self.prism(x, modality=modality, labels=labels)
 
     return PRISMConfigHF, PRISMPreTrainedForClassification

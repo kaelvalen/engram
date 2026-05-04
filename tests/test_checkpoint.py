@@ -9,7 +9,10 @@ from prism.training.checkpoint import load_checkpoint, save_checkpoint
 
 def _tiny_cfg() -> PRISMConfig:
     return PRISMConfig(
-        hidden_dim=32, num_heads=4, num_layers=4, delta_every=2,
+        hidden_dim=32,
+        num_heads=4,
+        num_layers=4,
+        delta_every=2,
         modalities=[ModalityConfig(name="ecg", input_dim=12, num_classes=3)],
     )
 

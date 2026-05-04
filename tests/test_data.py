@@ -8,6 +8,7 @@ from prism.data.image import patchify
 
 # ── ECG failure gate ──────────────────────────────────────────────────────────
 
+
 def test_ecg_failure_gate_raises_on_high_rate():
     """50% failure rate (5/10) exceeds threshold."""
     with pytest.raises(RuntimeError, match="failure rate"):
@@ -32,6 +33,7 @@ def test_ecg_failure_gate_passes_on_zero_total():
 
 # ── Image ─────────────────────────────────────────────────────────────────────
 
+
 def test_patchify_raises_on_indivisible_size():
     x = torch.randn(2, 3, 32, 32)
     with pytest.raises(AssertionError):
@@ -45,6 +47,7 @@ def test_patchify_correct_output_shape():
 
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
+
 
 def test_audio_synthetic_is_deterministic():
     ds1 = SyntheticMelPatchDataset(length=8, num_frames=32, mel_bins=16, num_classes=4, seed=42)

@@ -168,9 +168,7 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     tcfg = TrainerConfig(
-        tensorboard_dir=os.path.join(args.output_dir, "tb_joint")
-        if args.tensorboard
-        else None,
+        tensorboard_dir=os.path.join(args.output_dir, "tb_joint") if args.tensorboard else None,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name or "prism-joint",
     )
@@ -227,7 +225,13 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
         dt = time.time() - t0
         logger.info(
             "[%03d/%d] joint train_loss=%.4f | val acc ecg=%.4f img=%.4f mean=%.4f | %.1fs",
-            epoch, args.epochs, metrics["train_loss"], acc_e, acc_i, mean_acc, dt,
+            epoch,
+            args.epochs,
+            metrics["train_loss"],
+            acc_e,
+            acc_i,
+            mean_acc,
+            dt,
         )
 
         if mean_acc > best_mean:
@@ -296,9 +300,13 @@ def main(argv: list[str] | None = None) -> None:
         help="Root for downloaded data: datasets/cifar, datasets/ptbxl, … (not prism/data/)",
     )
     parser.add_argument("--output-dir", type=str, default="./output")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+    )
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--patch-size", type=int, default=4, help="CIFAR patch side (image / joint)")
+    parser.add_argument(
+        "--patch-size", type=int, default=4, help="CIFAR patch side (image / joint)"
+    )
     parser.add_argument("--window-size", type=int, default=250, help="ECG timesteps (ecg / joint)")
     parser.add_argument("--mel-bins", type=int, default=64, help="audio: mel frequency bins")
     parser.add_argument("--patch-frames", type=int, default=4, help="audio: frames per patch token")
@@ -309,7 +317,9 @@ def main(argv: list[str] | None = None) -> None:
         default=True,
         help="audio: use synthetic dataset (no files)",
     )
-    parser.add_argument("--tensorboard", action="store_true", help="log TensorBoard under output-dir/tb")
+    parser.add_argument(
+        "--tensorboard", action="store_true", help="log TensorBoard under output-dir/tb"
+    )
     parser.add_argument("--wandb-project", type=str, default=None)
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument("--early-stopping", type=int, default=0, help="patience on val acc; 0=off")
@@ -344,9 +354,12 @@ def main(argv: list[str] | None = None) -> None:
     def on_epoch(epoch: int, m: dict[str, float]) -> None:
         logger.info(
             "[%03d/%d] train loss: %.4f acc: %.4f | val loss: %.4f acc: %.4f",
-            epoch, args.epochs,
-            m["train_loss"], m["train_acc"],
-            m["val_loss"], m["val_acc"],
+            epoch,
+            args.epochs,
+            m["train_loss"],
+            m["train_acc"],
+            m["val_loss"],
+            m["val_acc"],
         )
 
     logger.info(

@@ -8,9 +8,7 @@ class _ResBlock1D(nn.Module):
     def __init__(self, ch: int, kernel_size: int = 7, dilation: int = 1):
         super().__init__()
         pad = (kernel_size - 1) // 2 * dilation
-        self.conv = nn.Conv1d(
-            ch, ch, kernel_size, padding=pad, dilation=dilation, bias=False
-        )
+        self.conv = nn.Conv1d(ch, ch, kernel_size, padding=pad, dilation=dilation, bias=False)
         self.bn = nn.BatchNorm1d(ch)
         self.act = nn.GELU()
 

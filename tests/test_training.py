@@ -69,6 +69,7 @@ def test_trainer_checkpoint_saved(tmp_path: Path):
     ckpt_path = tmp_path / "best_ecg.pt"
     assert ckpt_path.exists()
     import torch as _torch
+
     ckpt = _torch.load(ckpt_path, weights_only=False)
     assert "model_state" in ckpt
     assert "cfg" in ckpt
@@ -80,8 +81,5 @@ def test_train_epoch_updates_parameters():
     loader = _tiny_loader()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-2)
     train_epoch(model, loader, opt, torch.device("cpu"), modality="ecg")
-    changed = any(
-        not torch.allclose(before[n], p)
-        for n, p in model.named_parameters()
-    )
+    changed = any(not torch.allclose(before[n], p) for n, p in model.named_parameters())
     assert changed, "Parameters should change after a training epoch"

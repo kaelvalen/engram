@@ -46,7 +46,9 @@ def save_checkpoint(
 _REQUIRED_KEYS = {"model_state", "cfg"}
 
 
-def load_checkpoint(path: str | Path, map_location: str | torch.device | None = None) -> dict[str, Any]:
+def load_checkpoint(
+    path: str | Path, map_location: str | torch.device | None = None
+) -> dict[str, Any]:
     ckpt = torch.load(path, map_location=map_location, weights_only=False)
     missing = _REQUIRED_KEYS - set(ckpt.keys())
     if missing:
