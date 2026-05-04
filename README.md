@@ -23,6 +23,34 @@ These are interleaved 3:1 (S4 heavy), reflecting the hypothesis that continuous 
 
 ---
 
+## Results
+
+All runs use the default config (`hidden_dim=256`, `num_layers=12`, `num_heads=8`, ~8.1M params), AdamW with cosine schedule, `lr=3e-4`, `batch_size=64`, 50 epochs unless noted. Hardware: single CUDA GPU.
+
+### CIFAR-10 — block ablation
+
+Tests the hypothesis that S4 + Delta interleave beats either component alone. Same param budget across all three runs.
+
+| Block pattern | Val acc | Best epoch | Notes |
+|---|---|---|---|
+| **Hybrid (S4 : Delta = 3 : 1)** | **88.4%** | 44 / 50 | converged; val loss plateau ~0.38 |
+| All-S4 | ? | ? | — |
+| All-Delta | ? | ? | — |
+
+### PTB-XL ECG — 5-class superclass classification
+
+Tests modality transfer: same backbone, only projection + head change.
+
+| Model | Val acc | Params | Notes |
+|---|---|---|---|
+| PRISM (hybrid) | ? | ~8M | — |
+| ResNet-1D baseline | ? | ? | — |
+| Transformer baseline | ? | ? | — |
+
+Reproduce with `scripts/run_benchmarks.sh`.
+
+---
+
 ## Architecture
 
 ```
@@ -130,15 +158,15 @@ python train.py --modality image --epochs 50 --batch-size 64 --lr 3e-4
 # PTB-XL ECG — put files in ./datasets/ptbxl or pass a parent dir containing ptbxl/
 python train.py --modality ecg --epochs 50 --batch-size 32 --lr 3e-4 --data-root ./datasets
 
-# Synthetic mel-patch “audio” smoke / prototype (no files)
+# Synthetic mel-patch "audio" smoke / prototype (no files)
 python train.py --modality audio --epochs 5 --batch-size 32
 
 # Joint ECG + image on one shared backbone (alternating batches)
 python train.py --mode joint --epochs 20 --data-root ./datasets
 
 # Ablation: all-S4 or all-Delta blocks
-python train.py --modality image --block-pattern s4 --epochs 10
-python train.py --modality image --block-pattern delta --epochs 10
+python train.py --modality image --block-pattern s4 --epochs 50
+python train.py --modality image --block-pattern delta --epochs 50
 
 # Optional YAML defaults (CLI overrides)
 python train.py --config configs/train.example.yaml --modality image --epochs 3
@@ -146,6 +174,9 @@ python train.py --config configs/train.example.yaml --modality image --epochs 3
 # Logging & early stopping
 python train.py --modality image --tensorboard --early-stopping 5
 python train.py --modality image --wandb-project prism-runs
+
+# Full benchmark suite (CIFAR-10 ablations + ECG comparisons)
+bash scripts/run_benchmarks.sh
 ```
 
 Key CLI flags:
@@ -239,7 +270,8 @@ configs/train.example.yaml # optional YAML defaults
 scripts/
 ├── train_image.py         # legacy → CLI with --modality image
 ├── train_ecg.py           # legacy → CLI with --modality ecg
-└── train_baseline.py      # baseline training
+├── train_baseline.py      # baseline training
+└── run_benchmarks.sh      # full ablation + baseline suite
 tests/                     # pytest
 ```
 
@@ -263,12 +295,13 @@ The cleanest test of the agnostic backbone claim. If two modalities can share al
 
 ## Roadmap
 
+- [x] CIFAR-10 hybrid baseline (88.4% val acc, 50 epochs)
+- [ ] CIFAR-10 ablation: All-S4 and All-Delta runs
+- [ ] PTB-XL ECG: PRISM vs ResNet-1D vs Transformer baseline
 - [ ] Triton kernel for chunked delta rule (target: 5-10× prefill speedup)
 - [ ] Streaming decode with carry states (O(1) per token, O(D²) memory)
-- [ ] PTB-XL training + baseline comparison (ResNet-1D, Transformer, Mamba)
-- [ ] CIFAR-10 ablation: S4-only vs Delta-only vs hybrid
 - [ ] MoE SwiGLU (DeepSeekMoE-style shared expert) behind config flag
-- [ ] Third modality: audio (mel spectrogram patches)
+- [ ] Third modality: audio (real mel spectrogram patches, not synthetic)
 - [ ] HuggingFace-compatible `PreTrainedModel` shim
 
 ---
@@ -277,7 +310,7 @@ The cleanest test of the agnostic backbone claim. If two modalities can share al
 
 **Is:** A clean, tested implementation of a hybrid continuous-time SSM + associative memory architecture, designed to process heterogeneous signal modalities through a single backbone. The math is correct; the architecture is grounded in the 2024–2026 frontier of efficient sequence models (S4D, GatedDeltaNet, Mamba-2).
 
-**Isn't:** A production system or a claim that one backbone beats specialized architectures on all tasks. PRISM is a research hypothesis: *shared continuous-time dynamics are sufficient for modality-agnostic sequence modeling*. The experiments are the test.
+**Isn't:** A production system or a claim that one backbone beats specialized architectures on all tasks. PRISM is a research hypothesis: *shared continuous-time dynamics are sufficient for modality-agnostic sequence modeling*. The experiments are the test — and the test is still in progress.
 
 ---
 
