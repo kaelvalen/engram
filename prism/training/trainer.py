@@ -15,6 +15,23 @@ from .checkpoint import cfg_to_dict, save_checkpoint
 from .loops import evaluate_epoch, train_epoch
 
 
+_AMP_DTYPES: dict[str, torch.dtype] = {
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+}
+
+
+def _resolve_amp(amp: str | None) -> torch.dtype | None:
+    if amp in (None, "", "off", "none"):
+        return None
+    if amp not in _AMP_DTYPES:
+        raise ValueError(
+            f"Unsupported amp dtype: {amp!r}. Supported: 'bf16' (or 'off' to disable). "
+            "fp16 not supported here — would need a GradScaler. Use bf16 on Ampere+ GPUs."
+        )
+    return _AMP_DTYPES[amp]
+
+
 @dataclass
 class TrainerConfig:
     epochs: int = 50
@@ -27,6 +44,7 @@ class TrainerConfig:
     tensorboard_dir: str | None = None
     wandb_project: str | None = None
     wandb_run_name: str | None = None
+    amp: str | None = None  # None | "bf16"
 
 
 class Trainer:
@@ -44,6 +62,7 @@ class Trainer:
         self.cfg = cfg
         self.device = device
         self.tcfg = tcfg or TrainerConfig()
+        self._amp_dtype = _resolve_amp(self.tcfg.amp)
         self._writer = None
         if self.tcfg.tensorboard_dir:
             from torch.utils.tensorboard import SummaryWriter
@@ -104,8 +123,11 @@ class Trainer:
                 modality,
                 max_grad_norm=self.tcfg.max_grad_norm,
                 loss_log_fn=step_log if self._writer or self._wandb else None,
+                amp_dtype=self._amp_dtype,
             )
-            val_loss, val_acc = evaluate_epoch(self.model, val_loader, self.device, modality)
+            val_loss, val_acc = evaluate_epoch(
+                self.model, val_loader, self.device, modality, amp_dtype=self._amp_dtype
+            )
             sched.step()
 
             metrics = {

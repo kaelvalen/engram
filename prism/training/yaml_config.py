@@ -33,6 +33,7 @@ KNOWN_KEYS = {
     "wandb_project",
     "wandb_run_name",
     "early_stopping",
+    "amp",
 }
 
 _TOP_LEVEL_ALLOWED = KNOWN_KEYS | {"train", "model", "modalities"}

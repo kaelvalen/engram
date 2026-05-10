@@ -87,7 +87,7 @@ class GatedDeltaRule(nn.Module):
 
     @staticmethod
     def _recurrent(q, k, v, alpha, beta, S0):
-        """Per-token recurrent reference. float32 internally."""
+        """Per-token recurrent reference. Kept for tests; not on the hot path."""
         B, H, T, Dh = q.shape
         S = S0
         outs = []
@@ -113,6 +113,100 @@ class GatedDeltaRule(nn.Module):
         out = torch.stack(outs, dim=2)  # [B, H, T, Dh]
         return out.to(q.dtype), S
 
+    @staticmethod
+    def _step_one(q, k, v, alpha, beta, S0):
+        """Closed-form single-token step (T == 1 inference path).
+
+        Equivalent to _recurrent for T==1 but without the Python loop
+        and without per-step allocations.
+        """
+        # q,k,v: [B,H,1,Dh]  alpha,beta: [B,H,1]  S0: [B,H,Dh,Dh]
+        qt = q[:, :, 0].float()  # [B,H,Dh]
+        kt = k[:, :, 0].float()
+        vt = v[:, :, 0].float()
+        at = alpha[:, :, 0].float()  # [B,H]
+        bt = beta[:, :, 0].float()
+
+        Sk = torch.einsum("bhij,bhj->bhi", S0, kt)  # [B,H,Dh]
+        u = bt.unsqueeze(-1) * vt - (at * bt).unsqueeze(-1) * Sk  # [B,H,Dh]
+
+        Sq = torch.einsum("bhij,bhj->bhi", S0, qt)  # [B,H,Dh]
+        kq = (kt * qt).sum(-1, keepdim=True)  # [B,H,1]
+        o = at.unsqueeze(-1) * Sq + u * kq  # [B,H,Dh]
+
+        a4 = at.unsqueeze(-1).unsqueeze(-1)  # [B,H,1,1]
+        S_new = a4 * S0 + torch.einsum("bhi,bhj->bhij", u, kt)
+        return o.unsqueeze(2).to(q.dtype), S_new
+
+    @staticmethod
+    def _chunkwise(q, k, v, alpha, beta, S0, chunk_size):
+        """Vectorized chunkwise delta rule, mathematically equivalent to _recurrent.
+
+        Within each chunk we substitute u_t = β_t v_t - α_t β_t S_{t-1} k_t so the
+        recurrence becomes S_t = α_t S_{t-1} + u_t k_t^T. Rescaling ũ_t = u_t / ᾱ_t
+        (with ᾱ_t = Π_{i≤t} α_i) yields a triangular linear system in ũ that we
+        solve in a single batched call. Output and state update are then two
+        batched matmuls per chunk. T sequential matmuls → O(1) per chunk.
+        """
+        B, H, T, Dh = q.shape
+        device = q.device
+        qf, kf, vf = q.float(), k.float(), v.float()
+        af, bf = alpha.float(), beta.float()
+        dtype = qf.dtype
+
+        S = S0
+        outs = []
+
+        for start in range(0, T, chunk_size):
+            end = min(start + chunk_size, T)
+            C = end - start
+
+            q_c = qf[:, :, start:end]  # [B,H,C,Dh]
+            k_c = kf[:, :, start:end]
+            v_c = vf[:, :, start:end]
+            a_c = af[:, :, start:end]  # [B,H,C]
+            b_c = bf[:, :, start:end]
+
+            # ᾱ_t and 1/ᾱ_t via cumulative log-sum for numerical safety.
+            log_a = torch.log(a_c.clamp(min=1e-12))
+            cum_log = torch.cumsum(log_a, dim=-1)  # [B,H,C]
+            alpha_bar = torch.exp(cum_log)  # [B,H,C]
+            inv_alpha_bar = torch.exp(-cum_log)
+
+            # Pairwise k inner products and causal masks (built once per chunk).
+            kk = torch.einsum("bhcd,bhsd->bhcs", k_c, k_c)  # [B,H,C,C]
+            mask_strict = torch.tril(
+                torch.ones(C, C, device=device, dtype=dtype), diagonal=-1
+            )
+            mask_inc = torch.tril(
+                torch.ones(C, C, device=device, dtype=dtype), diagonal=0
+            )
+
+            # System matrix L: L_{t,s} = β_t (k_t · k_s) for s<t, 0 elsewhere.
+            # Combined with unit diagonal (via unitriangular=True) this is (I + L).
+            L = b_c.unsqueeze(-1) * kk * mask_strict  # [B,H,C,C]
+
+            # rhs row t: (β_t / ᾱ_t) v_t - β_t (S_0 k_t)
+            Sk = torch.einsum("bhij,bhcj->bhci", S, k_c)  # [B,H,C,Dh]
+            rhs = (b_c * inv_alpha_bar).unsqueeze(-1) * v_c - b_c.unsqueeze(-1) * Sk
+
+            # Forward triangular solve for ũ.
+            u_tilde = torch.linalg.solve_triangular(L, rhs, upper=False, unitriangular=True)
+
+            # Output: o_t = ᾱ_t · [(S_0 q_t) + Σ_{s≤t} ũ_s (k_s · q_t)]
+            Sq = torch.einsum("bhij,bhcj->bhci", S, q_c)  # [B,H,C,Dh]
+            qk = torch.einsum("bhcd,bhsd->bhcs", q_c, k_c) * mask_inc
+            attn = torch.einsum("bhcs,bhsd->bhcd", qk, u_tilde)
+            o_chunk = alpha_bar.unsqueeze(-1) * (Sq + attn)
+            outs.append(o_chunk)
+
+            # State: S_C = ᾱ_C · [S_0 + Ũ^T K]
+            UK = torch.einsum("bhcd,bhce->bhde", u_tilde, k_c)
+            S = alpha_bar[:, :, -1].view(B, H, 1, 1) * (S + UK)
+
+        out = torch.cat(outs, dim=2)
+        return out.to(q.dtype), S
+
     def forward(
         self,
         x: torch.Tensor,
@@ -135,24 +229,9 @@ class GatedDeltaRule(nn.Module):
         )
 
         if T == 1:
-            o, S_new = self._recurrent(q, k, v, alpha, beta, S0)
+            o, S_new = self._step_one(q, k, v, alpha, beta, S0)
         else:
-            # chunked
-            outs = []
-            S = S0
-            for start in range(0, T, self.chunk_size):
-                end = min(start + self.chunk_size, T)
-                chunk_o, S = self._recurrent(
-                    q[:, :, start:end],
-                    k[:, :, start:end],
-                    v[:, :, start:end],
-                    alpha[:, :, start:end],
-                    beta[:, :, start:end],
-                    S,
-                )
-                outs.append(chunk_o)
-            o = torch.cat(outs, dim=2)
-            S_new = S
+            o, S_new = self._chunkwise(q, k, v, alpha, beta, S0, self.chunk_size)
 
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
         o = o * gate

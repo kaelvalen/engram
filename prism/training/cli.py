@@ -17,8 +17,8 @@ from prism.data.paths import resolve_ptbxl_root
 from prism.logging import setup_logging
 from prism.model import PRISMForClassification
 from prism.training.checkpoint import save_checkpoint
-from prism.training.loops import cycle_loader, evaluate_epoch
-from prism.training.trainer import Trainer, TrainerConfig
+from prism.training.loops import _autocast, cycle_loader, evaluate_epoch
+from prism.training.trainer import Trainer, TrainerConfig, _resolve_amp
 
 logger = logging.getLogger(__name__)
 
@@ -167,10 +167,13 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    amp_dtype = _resolve_amp(args.amp)
+
     tcfg = TrainerConfig(
         tensorboard_dir=os.path.join(args.output_dir, "tb_joint") if args.tensorboard else None,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name or "prism-joint",
+        amp=args.amp,
     )
     trainer_helper = Trainer(model, cfg, device=device, tcfg=tcfg)
     writer = trainer_helper._writer
@@ -200,9 +203,10 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
             xe, ye = xe.to(device), ye.to(device)
             xi, yi = xi.to(device), yi.to(device)
             opt.zero_grad()
-            out_e = model(xe, modality="ecg", labels=ye)
-            out_i = model(xi, modality="image", labels=yi)
-            loss = out_e["loss"] + out_i["loss"]
+            with _autocast(device, amp_dtype):
+                out_e = model(xe, modality="ecg", labels=ye)
+                out_i = model(xi, modality="image", labels=yi)
+                loss = out_e["loss"] + out_i["loss"]
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
             opt.step()
@@ -210,8 +214,8 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
             n_tokens += 1
 
         sched.step()
-        vl_e, acc_e = evaluate_epoch(model, ecg_va, device, "ecg")
-        vl_i, acc_i = evaluate_epoch(model, img_va, device, "image")
+        vl_e, acc_e = evaluate_epoch(model, ecg_va, device, "ecg", amp_dtype=amp_dtype)
+        vl_i, acc_i = evaluate_epoch(model, img_va, device, "image", amp_dtype=amp_dtype)
         mean_acc = (acc_e + acc_i) / 2.0
         metrics = {
             "train_loss": total_loss / max(n_tokens, 1),
@@ -323,6 +327,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--wandb-project", type=str, default=None)
     parser.add_argument("--wandb-run-name", type=str, default=None)
     parser.add_argument("--early-stopping", type=int, default=0, help="patience on val acc; 0=off")
+    parser.add_argument(
+        "--amp",
+        type=str,
+        default="off",
+        choices=["off", "bf16"],
+        help="Mixed precision (bf16 autocast). Recommended on Ampere+ GPUs.",
+    )
     args = parser.parse_args(argv)
 
     setup_logging(args.log_level)
@@ -348,6 +359,7 @@ def main(argv: list[str] | None = None) -> None:
         tensorboard_dir=os.path.join(args.output_dir, "tb", modality) if args.tensorboard else None,
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name or f"prism-{modality}",
+        amp=args.amp,
     )
     trainer = Trainer(model, cfg, device=device, tcfg=tcfg)
 

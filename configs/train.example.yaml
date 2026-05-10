@@ -8,6 +8,7 @@ train:
   hidden_dim: 256
   num_layers: 12
   block_pattern: hybrid  # hybrid | s4 | delta
+  amp: bf16              # off | bf16
 
 model:
   num_heads: 8

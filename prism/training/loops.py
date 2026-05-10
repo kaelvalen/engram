@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
 import torch
@@ -14,6 +15,12 @@ def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
     return (logits.argmax(dim=-1) == labels).float().mean().item()
 
 
+def _autocast(device: torch.device, amp_dtype: torch.dtype | None):
+    if amp_dtype is None or device.type != "cuda":
+        return nullcontext()
+    return torch.amp.autocast(device_type=device.type, dtype=amp_dtype)
+
+
 def train_epoch(
     model: PRISMForClassification,
     loader: torch.utils.data.DataLoader,
@@ -23,6 +30,7 @@ def train_epoch(
     *,
     max_grad_norm: float = 1.0,
     loss_log_fn: Callable[[str, float, int], None] | None = None,
+    amp_dtype: torch.dtype | None = None,
 ) -> tuple[float, float]:
     model.train(True)
     total_loss, total_acc, n = 0.0, 0.0, 0
@@ -30,7 +38,8 @@ def train_epoch(
     for step, (x, labels) in enumerate(loader):
         x, labels = x.to(device), labels.to(device)
         optimizer.zero_grad()
-        out = model(x, modality=modality, labels=labels)
+        with _autocast(device, amp_dtype):
+            out = model(x, modality=modality, labels=labels)
         out["loss"].backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
@@ -51,13 +60,16 @@ def evaluate_epoch(
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     modality: str,
+    *,
+    amp_dtype: torch.dtype | None = None,
 ) -> tuple[float, float]:
     model.train(False)
     total_loss, total_acc, n = 0.0, 0.0, 0
 
     for x, labels in loader:
         x, labels = x.to(device), labels.to(device)
-        out = model(x, modality=modality, labels=labels)
+        with _autocast(device, amp_dtype):
+            out = model(x, modality=modality, labels=labels)
 
         B = x.size(0)
         total_loss += out["loss"].item() * B
