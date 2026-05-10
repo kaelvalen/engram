@@ -14,7 +14,6 @@ from prism.model import PRISMForClassification
 from .checkpoint import cfg_to_dict, save_checkpoint
 from .loops import evaluate_epoch, train_epoch
 
-
 _AMP_DTYPES: dict[str, torch.dtype] = {
     "bf16": torch.bfloat16,
     "bfloat16": torch.bfloat16,
