@@ -86,7 +86,7 @@ class GatedDeltaRule(nn.Module):
         return q, k, v, alpha, beta, gate
 
     @staticmethod
-    def _recurrent(q, k, v, alpha, beta, S0):
+    def _recurrent_naive(q, k, v, alpha, beta, S0):
         """Per-token recurrent reference. Kept for tests; not on the hot path."""
         B, H, T, Dh = q.shape
         S = S0
@@ -117,7 +117,7 @@ class GatedDeltaRule(nn.Module):
     def _step_one(q, k, v, alpha, beta, S0):
         """Closed-form single-token step (T == 1 inference path).
 
-        Equivalent to _recurrent for T==1 but without the Python loop
+        Equivalent to _recurrent_naive for T==1 but without the Python loop
         and without per-step allocations.
         """
         # q,k,v: [B,H,1,Dh]  alpha,beta: [B,H,1]  S0: [B,H,Dh,Dh]
@@ -139,8 +139,8 @@ class GatedDeltaRule(nn.Module):
         return o.unsqueeze(2).to(q.dtype), S_new
 
     @staticmethod
-    def _chunkwise(q, k, v, alpha, beta, S0, chunk_size):
-        """Vectorized chunkwise delta rule, mathematically equivalent to _recurrent.
+    def _recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size):
+        """Vectorized chunkwise delta rule, mathematically equivalent to _recurrent_naive.
 
         Within each chunk we substitute u_t = β_t v_t - α_t β_t S_{t-1} k_t so the
         recurrence becomes S_t = α_t S_{t-1} + u_t k_t^T. Rescaling ũ_t = u_t / ᾱ_t
@@ -231,7 +231,7 @@ class GatedDeltaRule(nn.Module):
         if T == 1:
             o, S_new = self._step_one(q, k, v, alpha, beta, S0)
         else:
-            o, S_new = self._chunkwise(q, k, v, alpha, beta, S0, self.chunk_size)
+            o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
 
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
         o = o * gate
