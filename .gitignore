@@ -102,3 +102,4 @@ Thumbs.db
 *.tar.gz
 *python.tar.gz
 *.whl
+uv.lock
