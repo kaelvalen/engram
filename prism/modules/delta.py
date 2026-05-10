@@ -175,12 +175,8 @@ class GatedDeltaRule(nn.Module):
 
             # Pairwise k inner products and causal masks (built once per chunk).
             kk = torch.einsum("bhcd,bhsd->bhcs", k_c, k_c)  # [B,H,C,C]
-            mask_strict = torch.tril(
-                torch.ones(C, C, device=device, dtype=dtype), diagonal=-1
-            )
-            mask_inc = torch.tril(
-                torch.ones(C, C, device=device, dtype=dtype), diagonal=0
-            )
+            mask_strict = torch.tril(torch.ones(C, C, device=device, dtype=dtype), diagonal=-1)
+            mask_inc = torch.tril(torch.ones(C, C, device=device, dtype=dtype), diagonal=0)
 
             # System matrix L: L_{t,s} = β_t (k_t · k_s) for s<t, 0 elsewhere.
             # Combined with unit diagonal (via unitriangular=True) this is (I + L).

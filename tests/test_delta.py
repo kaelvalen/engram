@@ -27,9 +27,7 @@ def test_delta_vectorized_matches_naive_module_forward_projections():
     S0 = torch.zeros(B, delta.num_heads, Dh, Dh, dtype=torch.float32)
 
     out_old, _ = GatedDeltaRule._recurrent_naive(q, k, v, alpha, beta, S0)
-    out_new, _ = GatedDeltaRule._recurrent_vectorized(
-        q, k, v, alpha, beta, S0, delta.chunk_size
-    )
+    out_new, _ = GatedDeltaRule._recurrent_vectorized(q, k, v, alpha, beta, S0, delta.chunk_size)
     torch.testing.assert_close(out_new, out_old, rtol=2e-3, atol=1e-4)
 
 
@@ -37,9 +35,7 @@ def test_chunkwise_matches_recurrent():
     q, k, v, alpha, beta, S0 = _make_inputs(T=20, Dh=8)
 
     o_ref, S_ref = GatedDeltaRule._recurrent_naive(q, k, v, alpha, beta, S0)
-    o_par, S_par = GatedDeltaRule._recurrent_vectorized(
-        q, k, v, alpha, beta, S0, chunk_size=8
-    )
+    o_par, S_par = GatedDeltaRule._recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size=8)
 
     torch.testing.assert_close(o_par, o_ref, rtol=2e-3, atol=2e-3)
     torch.testing.assert_close(S_par, S_ref, rtol=2e-3, atol=2e-3)
@@ -50,9 +46,7 @@ def test_chunkwise_matches_recurrent_T_not_divisible():
     q, k, v, alpha, beta, S0 = _make_inputs(T=23, Dh=8, seed=1)
 
     o_ref, S_ref = GatedDeltaRule._recurrent_naive(q, k, v, alpha, beta, S0)
-    o_par, S_par = GatedDeltaRule._recurrent_vectorized(
-        q, k, v, alpha, beta, S0, chunk_size=8
-    )
+    o_par, S_par = GatedDeltaRule._recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size=8)
 
     torch.testing.assert_close(o_par, o_ref, rtol=2e-3, atol=2e-3)
     torch.testing.assert_close(S_par, S_ref, rtol=2e-3, atol=2e-3)
@@ -73,9 +67,7 @@ def test_chunkwise_single_chunk():
     q, k, v, alpha, beta, S0 = _make_inputs(T=8, Dh=8, seed=3)
 
     o_ref, S_ref = GatedDeltaRule._recurrent_naive(q, k, v, alpha, beta, S0)
-    o_par, S_par = GatedDeltaRule._recurrent_vectorized(
-        q, k, v, alpha, beta, S0, chunk_size=8
-    )
+    o_par, S_par = GatedDeltaRule._recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size=8)
 
     torch.testing.assert_close(o_par, o_ref, rtol=2e-3, atol=2e-3)
     torch.testing.assert_close(S_par, S_ref, rtol=2e-3, atol=2e-3)
