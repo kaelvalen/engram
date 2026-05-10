@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import torch
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
 
 
 def patchify(x: torch.Tensor, patch_size: int = 4) -> torch.Tensor:
@@ -46,6 +45,8 @@ def get_cifar_loaders(
     patch_size=4 → 32/4 = 8 → 8×8 = 64 patches per image
     input_dim = 4×4×3 = 48
     """
+    from torchvision import datasets, transforms
+
     mean = (0.4914, 0.4822, 0.4465)
     std = (0.2470, 0.2435, 0.2616)
 

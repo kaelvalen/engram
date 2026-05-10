@@ -14,7 +14,6 @@ import torch.nn.functional as F
 from prism.config import ModalityConfig, PRISMConfig
 from prism.data.image import patchify
 from prism.model import PRISMForClassification
-from torchvision import transforms
 
 CIFAR10_CLASSES = [
     "airplane",
@@ -55,7 +54,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> PRISMForClassifica
     model.eval()
 
     epoch = ckpt.get("epoch", "?")
-    val_acc = ckpt.get("val_acc", "?")
+    val_acc = ckpt.get("metrics", {}).get("val_acc", ckpt.get("val_acc", "?"))
     print(
         f"Loaded checkpoint — epoch: {epoch}, val_acc: {val_acc:.4f}"
         if isinstance(val_acc, float)
@@ -70,6 +69,7 @@ def infer_single(
 ):
     """Tek bir görüntü üzerinde inference."""
     from PIL import Image
+    from torchvision import transforms
 
     mean = (0.4914, 0.4822, 0.4465)
     std = (0.2470, 0.2435, 0.2616)
@@ -103,7 +103,7 @@ def eval_cifar(
     """CIFAR-10 test seti üzerinde toplu değerlendirme."""
     from prism.data.image import PatchCollator
     from torch.utils.data import DataLoader
-    from torchvision import datasets
+    from torchvision import datasets, transforms
 
     mean = (0.4914, 0.4822, 0.4465)
     std = (0.2470, 0.2435, 0.2616)

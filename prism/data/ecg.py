@@ -66,7 +66,11 @@ class PTBXLDataset(Dataset):
 
         # scp_statements'ten superclass mapping yükle
         scp = pd.read_csv(os.path.join(self.root, "scp_statements.csv"), index_col=0)
-        scp = scp[scp.rhythm == 1.0] if "rhythm" in scp.columns else scp
+        # PTB-XL diagnostic superclasses (NORM, MI, STTC, CD, HYP) are defined
+        # for diagnostic SCP statements, not rhythm statements. Filtering on
+        # ``rhythm`` silently drops the labels this classifier is trained to predict.
+        if "diagnostic" in scp.columns:
+            scp = scp[scp.diagnostic == 1.0]
 
         def get_label(codes):
             for code in codes:

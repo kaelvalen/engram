@@ -43,7 +43,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> PRISMForClassifica
     model.eval()
 
     epoch = ckpt.get("epoch", "?")
-    val_acc = ckpt.get("val_acc", "?")
+    val_acc = ckpt.get("metrics", {}).get("val_acc", ckpt.get("val_acc", "?"))
     if isinstance(val_acc, float):
         print(f"Loaded checkpoint — epoch: {epoch}, val_acc: {val_acc:.4f}")
     else:

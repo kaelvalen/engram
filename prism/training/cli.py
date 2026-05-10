@@ -138,25 +138,42 @@ def _build_loaders_joint(
     return ecg_train, ecg_val, img_train, img_val, cfg
 
 
-def _apply_yaml_defaults(args: argparse.Namespace, yaml_path: str | None) -> None:
+def _yaml_defaults(yaml_path: str | None) -> dict[str, object]:
+    """Return parser defaults loaded from YAML.
+
+    YAML values are applied as argparse defaults before the final parse, so
+    explicit CLI flags still override the config file. This matches the
+    documented precedence: built-in defaults < YAML < CLI.
+    """
     if not yaml_path:
-        return
+        return {}
+
     from prism.training.yaml_config import load_yaml_config
 
     data = load_yaml_config(yaml_path)
+    defaults: dict[str, object] = {}
+
     train_section = data.get("train", data)
     for key, val in train_section.items():
-        if key == "modalities" or key == "model":
+        if key in {"modalities", "model"}:
             continue
-        attr = key.replace("-", "_")
-        if hasattr(args, attr):
-            setattr(args, attr, val)
+        defaults[key.replace("-", "_")] = val
+
     if "model" in data:
-        m = data["model"]
-        for key, val in m.items():
-            attr = key.replace("-", "_")
-            if hasattr(args, attr):
-                setattr(args, attr, val)
+        for key, val in data["model"].items():
+            defaults[key.replace("-", "_")] = val
+
+    return defaults
+
+
+def _apply_yaml_defaults(parser: argparse.ArgumentParser, yaml_path: str | None) -> None:
+    defaults = {
+        key: val
+        for key, val in _yaml_defaults(yaml_path).items()
+        if any(action.dest == key for action in parser._actions)
+    }
+    if defaults:
+        parser.set_defaults(**defaults)
 
 
 def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
@@ -334,11 +351,14 @@ def main(argv: list[str] | None = None) -> None:
         choices=["off", "bf16"],
         help="Mixed precision (bf16 autocast). Recommended on Ampere+ GPUs.",
     )
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", type=str, default=None)
+    config_args, _ = config_parser.parse_known_args(argv)
+    _apply_yaml_defaults(parser, config_args.config)
+
     args = parser.parse_args(argv)
 
     setup_logging(args.log_level)
-
-    _apply_yaml_defaults(args, args.config)
 
     device = torch.device(args.device)
     os.makedirs(args.output_dir, exist_ok=True)

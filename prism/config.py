@@ -50,9 +50,7 @@ class PRISMConfig:
             f"hidden_dim {self.hidden_dim} must be divisible by num_heads {self.num_heads}"
         )
         if self.force_block_type is None:
-            assert self.num_layers % self.delta_every == 0, (
-                f"num_layers {self.num_layers} must be divisible by delta_every {self.delta_every}"
-            )
+            assert self.delta_every > 0, f"delta_every must be positive, got {self.delta_every}"
         else:
             assert self.force_block_type in ("s4", "delta"), (
                 f"force_block_type must be 's4', 'delta', or None, got {self.force_block_type!r}"
