@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prism"
 version = "0.1.0"
-description = "Parallel Recurrent Integrated Signal Model — modality-agnostic sequence backbone"
+description = "PRISM — modality-portable hybrid linear-recurrent (SSD + Gated Delta) sequence backbone"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
-    "torch>=2.1",
+    "torch>=2.5",  # torch.associative_scan (prototype HOP) used by the SSD scan
 ]
 
 [project.optional-dependencies]
@@ -22,10 +22,26 @@ train = [
     "pandas>=2",
     "torchaudio>=2.1",
 ]
+# Optional GPU kernels: production delta-rule / SSD backends. All are optional —
+# the pure-PyTorch reference paths run without them (see modules/delta.py,
+# modules/ssd.py). Pin FLA per its CI-tested Triton version (kernel-stability
+# issues on some Triton releases, e.g. fla-org #734 on H100 w/ Triton 3.2–3.6).
+gpu = [
+    "flash-linear-attention>=0.3.2,<0.4",
+    "mamba-ssm>=2.2",
+    "causal-conv1d>=1.4",
+]
 dev = [
     "pytest>=7.4",
     "ruff>=0.4",
     "PyYAML>=6",
+    "hypothesis>=6.100",
+]
+test = [
+    "pytest>=7.4",
+    "hypothesis>=6.100",
+    "PyYAML>=6",
+    "scikit-learn>=1.3",  # optional AUROC cross-check in tests
 ]
 hf = [
     "transformers>=4.36",

@@ -9,71 +9,18 @@ import torch.nn.functional as F
 from .conv import ShortCausalConv1d
 from .ffn import SwiGLU
 from .norm import RMSNorm
+from .scan import linear_recurrence
 
 
-def parallel_scan(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Parallel prefix scan: h_t = a_t * h_{t-1} + b_t
+def parallel_scan(a: torch.Tensor, b: torch.Tensor, backend: str = "reference") -> torch.Tensor:
+    """Parallel prefix scan: h_t = a_t * h_{t-1} + b_t. a, b: [B, H, T, N].
 
-    a: [B, H, T, N] complex  — per-step decay
-    b: [B, H, T, N] complex  — per-step input
-    returns h: [B, H, T, N] complex
-
-    Uses work-efficient parallel scan (Blelloch 1990).
-    Combination operator: (A1,B1)⊕(A2,B2) = (A2*A1, A2*B1+B2)
-    Exclusive scan gives b[t] = h[t-1]; inclusive: h[t] = a_orig[t]*b[t] + b_orig[t].
+    Thin wrapper over :mod:`prism.modules.scan`. The hand-derived Blelloch
+    up/down-sweep that originally lived here is preserved in
+    :mod:`prism.modules.scan_reference` for teaching and equivalence tests; the
+    production scan no longer uses strided indexed assignment.
     """
-    B, H, T, N = a.shape
-
-    # save originals for inclusive conversion at the end
-    a_orig = a.clone()
-    b_orig = b.clone()
-
-    # pad to next power of 2
-    T_pad = 1
-    while T_pad < T:
-        T_pad *= 2
-
-    if T_pad > T:
-        pad = T_pad - T
-        a = torch.cat([a, torch.ones(B, H, pad, N, dtype=a.dtype, device=a.device)], dim=2)
-        b = torch.cat([b, torch.zeros(B, H, pad, N, dtype=b.dtype, device=b.device)], dim=2)
-
-    levels = int(math.log2(T_pad))
-
-    # upsweep: pair[r] = pair[l] ⊕ pair[r]
-    for d in range(levels):
-        step = 2 ** (d + 1)
-        idx_r = torch.arange(step - 1, T_pad, step, device=a.device)
-        idx_l = idx_r - 2**d
-        a_l = a[:, :, idx_l]
-        b_l = b[:, :, idx_l]
-        # b must be updated before a so it uses the original a[r]
-        b[:, :, idx_r] = a[:, :, idx_r] * b_l + b[:, :, idx_r]
-        a[:, :, idx_r] = a[:, :, idx_r] * a_l
-
-    # downsweep: set root to identity (1, 0) and propagate exclusive scan
-    a = a.clone()
-    b = b.clone()
-    a[:, :, -1] = torch.ones(B, H, N, dtype=a.dtype, device=a.device)
-    b[:, :, -1] = torch.zeros(B, H, N, dtype=b.dtype, device=b.device)
-
-    for d in range(levels - 1, -1, -1):
-        step = 2 ** (d + 1)
-        idx_r = torch.arange(step - 1, T_pad, step, device=a.device)
-        idx_l = idx_r - 2**d
-        a_l_old = a[:, :, idx_l].clone()
-        b_l_old = b[:, :, idx_l].clone()
-
-        a[:, :, idx_l] = a[:, :, idx_r]
-        b[:, :, idx_l] = b[:, :, idx_r]
-
-        # new right = parent ⊕ old_left: (A_l*A_parent, A_l*B_parent + B_l)
-        b[:, :, idx_r] = a_l_old * b[:, :, idx_r] + b_l_old
-        a[:, :, idx_r] = a_l_old * a[:, :, idx_r]
-
-    # b[:, :, :T] is now the exclusive scan where b[t] = h[t-1]
-    # convert to inclusive: h[t] = a_orig[t] * h[t-1] + b_orig[t]
-    return a_orig * b[:, :, :T] + b_orig
+    return linear_recurrence(a, b, backend=backend)
 
 
 class S4SSM(nn.Module):
@@ -97,6 +44,8 @@ class S4SSM(nn.Module):
         state_mult: int = 2,
         dt_min: float = 0.001,
         dt_max: float = 0.1,
+        init: str = "lin",
+        scan_backend: str = "reference",
     ):
         super().__init__()
         assert hidden_dim % num_heads == 0
@@ -104,14 +53,26 @@ class S4SSM(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
         self.state_dim = self.head_dim * state_mult
+        self.scan_backend = scan_backend
 
         H, Dh, N = num_heads, self.head_dim, self.state_dim
 
         self.in_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
-        # A: diagonal complex, negative real part → stable
-        A_log = torch.linspace(math.log(1), math.log(state_mult * Dh), N).unsqueeze(0).repeat(H, 1)
-        A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1)
+        # A: diagonal complex, negative real part → stable.
+        #   "lin"    — S4D-Lin (Gu et al. NeurIPS 2022): A_n = -1/2 + iπn, which
+        #              dominated S4D-Inv / random on shorter sequences.
+        #   "legacy" — original linspace real init + π·arange imaginary init.
+        if init == "lin":
+            A_log = torch.full((H, N), math.log(0.5))  # real part = -exp(log .5) = -1/2
+            A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1).float()
+        else:
+            A_log = (
+                torch.linspace(math.log(1), math.log(state_mult * Dh), N)
+                .unsqueeze(0)
+                .repeat(H, 1)
+            )
+            A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1)
         self.A_log = nn.Parameter(A_log)
         self.A_imag = nn.Parameter(A_imag)
 
@@ -221,7 +182,7 @@ class S4SSM(nn.Module):
             b_seq = b_seq.clone()
             b_seq[:, :, 0] = b_seq[:, :, 0] + A_bar[:, :, 0] * h0
 
-        h = parallel_scan(A_bar.clone(), b_seq.clone())  # [B, H, T, N]
+        h = parallel_scan(A_bar.clone(), b_seq.clone(), self.scan_backend)  # [B, H, T, N]
         h_new = h[:, :, -1, :]  # [B, H, N]
 
         # output
@@ -247,11 +208,13 @@ class S4Block(nn.Module):
         dt_max: float = 0.1,
         conv_kernel_size: int = 4,
         ffn_expand: int = 2,
+        init: str = "lin",
+        scan_backend: str = "reference",
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
         self.conv = ShortCausalConv1d(hidden_dim, conv_kernel_size)
-        self.ssm = S4SSM(hidden_dim, num_heads, state_mult, dt_min, dt_max)
+        self.ssm = S4SSM(hidden_dim, num_heads, state_mult, dt_min, dt_max, init, scan_backend)
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
 

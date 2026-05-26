@@ -23,6 +23,37 @@ from prism.training.trainer import Trainer, TrainerConfig, _resolve_amp
 logger = logging.getLogger(__name__)
 
 
+def _cfg_kwargs(args: argparse.Namespace) -> dict:
+    """Shared PRISMConfig kwargs derived from CLI args (architecture knobs).
+
+    `--layer-pattern` (explicit comma/space list) takes precedence over the
+    legacy `--block-pattern` force/interleave; when given it also overrides
+    num_layers to match.
+    """
+    kwargs: dict = dict(
+        hidden_dim=args.hidden_dim,
+        num_heads=args.num_heads,
+        num_layers=args.num_layers,
+        delta_every=args.delta_every,
+        ssm_kind=args.ssm_kind,
+        s4d_init=args.s4d_init,
+        delta_backend=args.delta_backend,
+        scan_backend=args.scan_backend,
+        swa_window=args.swa_window,
+        compile=args.compile,
+    )
+    layer_pattern = getattr(args, "layer_pattern", None)
+    if layer_pattern:
+        tokens = [t for t in layer_pattern.replace(",", " ").split() if t]
+        kwargs["block_pattern"] = tokens
+        kwargs["num_layers"] = len(tokens)
+    else:
+        kwargs["force_block_type"] = (
+            None if args.block_pattern == "hybrid" else args.block_pattern
+        )
+    return kwargs
+
+
 def _build_loaders_single(
     args: argparse.Namespace,
 ) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, str, PRISMConfig]:
@@ -83,15 +114,7 @@ def _build_loaders_single(
             )
         ]
 
-    force_block = None if args.block_pattern == "hybrid" else args.block_pattern
-    cfg = PRISMConfig(
-        hidden_dim=args.hidden_dim,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers,
-        delta_every=args.delta_every,
-        modalities=modalities,
-        force_block_type=force_block,
-    )
+    cfg = PRISMConfig(modalities=modalities, **_cfg_kwargs(args))
     return train_loader, val_loader, modality, cfg
 
 
@@ -126,15 +149,7 @@ def _build_loaders_joint(
         ModalityConfig(name="ecg", input_dim=12, num_classes=5, window_size=args.window_size),
         ModalityConfig(name="image", input_dim=input_dim, num_classes=10, patch_size=patch_size),
     ]
-    force_block = None if args.block_pattern == "hybrid" else args.block_pattern
-    cfg = PRISMConfig(
-        hidden_dim=args.hidden_dim,
-        num_heads=args.num_heads,
-        num_layers=args.num_layers,
-        delta_every=args.delta_every,
-        modalities=modalities,
-        force_block_type=force_block,
-    )
+    cfg = PRISMConfig(modalities=modalities, **_cfg_kwargs(args))
     return ecg_train, ecg_val, img_train, img_val, cfg
 
 
@@ -313,6 +328,45 @@ def main(argv: list[str] | None = None) -> None:
         default="hybrid",
         choices=["hybrid", "s4", "delta"],
         help="hybrid = default interleave; s4/delta = ablation (all one type)",
+    )
+    parser.add_argument(
+        "--layer-pattern",
+        type=str,
+        default=None,
+        help="Explicit per-layer pattern, e.g. 's4,s4,s4,delta' or 's4 s4 s4 swa'. "
+        "Tokens: s4|delta|swa. Overrides --block-pattern and sets num_layers.",
+    )
+    parser.add_argument(
+        "--ssm-kind",
+        type=str,
+        default="ssd",
+        choices=["ssd", "s4d_legacy"],
+        help="SSM impl for 's4' slots: ssd (Mamba-2 selective) or s4d_legacy.",
+    )
+    parser.add_argument(
+        "--s4d-init",
+        type=str,
+        default="lin",
+        choices=["lin", "legacy"],
+        help="S4D-legacy A init (only when --ssm-kind s4d_legacy).",
+    )
+    parser.add_argument(
+        "--delta-backend",
+        type=str,
+        default="reference",
+        choices=["reference", "fla"],
+        help="Gated-delta backend: reference (pure PyTorch) or fla (Triton, GPU).",
+    )
+    parser.add_argument(
+        "--scan-backend",
+        type=str,
+        default="auto",
+        choices=["auto", "assoc", "reference"],
+        help="Linear-recurrence scan backend for SSD/S4D.",
+    )
+    parser.add_argument("--swa-window", type=int, default=128, help="Sliding-window attn span.")
+    parser.add_argument(
+        "--compile", action="store_true", help="torch.compile the model in the trainer."
     )
     parser.add_argument(
         "--data-root",

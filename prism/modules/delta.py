@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import torch
@@ -9,6 +10,34 @@ import torch.nn.functional as F
 from .conv import ShortCausalConv1d
 from .ffn import SwiGLU
 from .norm import RMSNorm, l2_normalize
+
+logger = logging.getLogger(__name__)
+
+
+def _acc(x: torch.Tensor) -> torch.Tensor:
+    """Promote to an accumulation dtype: float32 for bf16/fp16, but keep
+    float32/float64 untouched (so float64 gradcheck stays double-precision)."""
+    return x if x.dtype in (torch.float32, torch.float64) else x.float()
+
+
+# Cache the FLA chunk_gated_delta_rule kernel (Triton, GPU-only). None if absent.
+_FLA_FN = None
+_FLA_CHECKED = False
+_FLA_WARNED = False
+
+
+def _load_fla():
+    """Return fla.ops chunk_gated_delta_rule or None (cached)."""
+    global _FLA_FN, _FLA_CHECKED
+    if not _FLA_CHECKED:
+        _FLA_CHECKED = True
+        try:
+            from fla.ops.gated_delta_rule import chunk_gated_delta_rule
+
+            _FLA_FN = chunk_gated_delta_rule
+        except Exception:  # pragma: no cover - import path varies / GPU-only
+            _FLA_FN = None
+    return _FLA_FN
 
 
 @dataclass
@@ -34,6 +63,7 @@ class GatedDeltaRule(nn.Module):
         qk_norm: bool = True,
         chunk_size: int = 64,
         gate_bias_init: float = 4.0,
+        backend: str = "reference",
     ):
         super().__init__()
         assert hidden_dim % num_heads == 0
@@ -42,6 +72,7 @@ class GatedDeltaRule(nn.Module):
         self.head_dim = hidden_dim // num_heads
         self.qk_norm = qk_norm
         self.chunk_size = chunk_size
+        self.backend = backend
 
         self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
@@ -92,8 +123,8 @@ class GatedDeltaRule(nn.Module):
         S = S0
         outs = []
 
-        qf, kf, vf = q.float(), k.float(), v.float()
-        af, bf = alpha.float(), beta.float()
+        qf, kf, vf = _acc(q), _acc(k), _acc(v)
+        af, bf = _acc(alpha), _acc(beta)
 
         for i in range(T):
             kt = kf[:, :, i]  # [B, H, Dh]
@@ -121,11 +152,11 @@ class GatedDeltaRule(nn.Module):
         and without per-step allocations.
         """
         # q,k,v: [B,H,1,Dh]  alpha,beta: [B,H,1]  S0: [B,H,Dh,Dh]
-        qt = q[:, :, 0].float()  # [B,H,Dh]
-        kt = k[:, :, 0].float()
-        vt = v[:, :, 0].float()
-        at = alpha[:, :, 0].float()  # [B,H]
-        bt = beta[:, :, 0].float()
+        qt = _acc(q[:, :, 0])  # [B,H,Dh]
+        kt = _acc(k[:, :, 0])
+        vt = _acc(v[:, :, 0])
+        at = _acc(alpha[:, :, 0])  # [B,H]
+        bt = _acc(beta[:, :, 0])
 
         Sk = torch.einsum("bhij,bhj->bhi", S0, kt)  # [B,H,Dh]
         u = bt.unsqueeze(-1) * vt - (at * bt).unsqueeze(-1) * Sk  # [B,H,Dh]
@@ -150,8 +181,8 @@ class GatedDeltaRule(nn.Module):
         """
         B, H, T, Dh = q.shape
         device = q.device
-        qf, kf, vf = q.float(), k.float(), v.float()
-        af, bf = alpha.float(), beta.float()
+        qf, kf, vf = _acc(q), _acc(k), _acc(v)
+        af, bf = _acc(alpha), _acc(beta)
         dtype = qf.dtype
 
         S = S0
@@ -203,16 +234,45 @@ class GatedDeltaRule(nn.Module):
         out = torch.cat(outs, dim=2)
         return out.to(q.dtype), S
 
+    def _forward_fla(self, q, k, v, alpha, beta, S0):
+        """FLA Triton chunk_gated_delta_rule path (GPU-only, production backend).
+
+        Maps our (alpha=forget gate, beta=write gate) to FLA's (g=log decay,
+        beta). q/k are already l2-normalised in `_project`, so we pass scale=1.
+        Numerical equivalence against `_recurrent_vectorized` is asserted (on
+        GPU, when FLA is importable) in tests/test_delta_equivalence.py.
+        """
+        fn = _load_fla()
+        if fn is None:
+            raise RuntimeError("FLA not available")
+        # [B,H,T,Dh] → [B,T,H,Dh]; alpha,beta [B,H,T] → [B,T,H]
+        qf = q.transpose(1, 2).contiguous()
+        kf = k.transpose(1, 2).contiguous()
+        vf = v.transpose(1, 2).contiguous()
+        g = torch.log(alpha.transpose(1, 2).clamp(min=1e-12)).contiguous()
+        bf = beta.transpose(1, 2).contiguous()
+        o, S_new = fn(
+            qf, kf, vf, g, bf,
+            scale=1.0,
+            initial_state=S0,
+            output_final_state=True,
+            head_first=False,
+        )
+        o = o.transpose(1, 2)  # [B,T,H,V] → [B,H,T,V]
+        return o.to(q.dtype), S_new
+
     def forward(
         self,
         x: torch.Tensor,
         state: DeltaState | None = None,
     ) -> tuple[torch.Tensor, DeltaState]:
+        global _FLA_WARNED
         B, T, _ = x.shape
         q, k, v, alpha, beta, gate = self._project(x)
 
+        acc_dtype = x.dtype if x.dtype in (torch.float32, torch.float64) else torch.float32
         S0 = (
-            state.S.float()
+            _acc(state.S)
             if state is not None
             else torch.zeros(
                 B,
@@ -220,12 +280,23 @@ class GatedDeltaRule(nn.Module):
                 self.head_dim,
                 self.head_dim,
                 device=x.device,
-                dtype=torch.float32,
+                dtype=acc_dtype,
             )
         )
 
         if T == 1:
             o, S_new = self._step_one(q, k, v, alpha, beta, S0)
+        elif self.backend == "fla":
+            try:
+                o, S_new = self._forward_fla(q, k, v, alpha, beta, S0)
+            except Exception as e:  # graceful fallback: never crash on missing kernel
+                if not _FLA_WARNED:
+                    logger.warning(
+                        "FLA delta backend unavailable (%s); falling back to the "
+                        "reference chunked implementation.", e,
+                    )
+                    _FLA_WARNED = True
+                o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
         else:
             o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
 
@@ -247,11 +318,14 @@ class DeltaBlock(nn.Module):
         gate_bias_init: float = 4.0,
         conv_kernel_size: int = 4,
         ffn_expand: int = 2,
+        backend: str = "reference",
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
         self.conv = ShortCausalConv1d(hidden_dim, conv_kernel_size)
-        self.delta = GatedDeltaRule(hidden_dim, num_heads, qk_norm, chunk_size, gate_bias_init)
+        self.delta = GatedDeltaRule(
+            hidden_dim, num_heads, qk_norm, chunk_size, gate_bias_init, backend
+        )
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
 

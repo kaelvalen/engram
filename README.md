@@ -1,53 +1,113 @@
-# PRISM — Parallel Recurrent Integrated Signal Model
+# PRISM — modality-portable hybrid linear-recurrent backbone
 
-> A modality-agnostic sequence architecture that processes ECG signals, images, and arbitrary continuous inputs through a single shared backbone — no modality-specific encoders, no fusion layers.
+> One hybrid **SSD + Gated-Delta** sequence backbone — no modality-specific
+> architecture — applied with **identical hyperparameters** to 12-lead ECG
+> (PTB-XL), audio, and sequential images. A from-scratch reference
+> implementation with full **numerical-equivalence tests** against the
+> `torch.associative_scan` and FLA Triton kernels.
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![PyTorch 2.1+](https://img.shields.io/badge/pytorch-2.1%2B-orange)](https://pytorch.org/)
+[![PyTorch 2.5+](https://img.shields.io/badge/pytorch-2.5%2B-orange)](https://pytorch.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
-## The Idea
+## What's the claim
 
-Modern multimodal architectures treat each modality as a separate problem — a vision encoder here, a text encoder there, a fusion layer somewhere in between. This works, but it raises a question: **if everything is a sequence of signals, why do we need different backbones?**
+Hybrid linear-recurrent backbones (Mamba-2, Gated DeltaNet) win on *language*,
+but their design choices are language-specific. PRISM tests whether a single
+hybrid backbone — with **no modality-specific architectural tweaks** — matches
+strong CNN baselines on PTB-XL (the primary, clinically-defensible target),
+Speech Commands, and sequential CIFAR-10.
 
-PRISM's answer is that we don't. A 12-lead ECG, a sequence of image patches, and a stream of sensor readings are all continuous signals sampled over time. A backbone that understands continuous-time dynamics should handle all of them — with only a lightweight per-modality input projection to adapt dimensionality.
+The backbone interleaves two complementary mixers (plus optional attention):
 
-The backbone interleaves two complementary mechanisms:
+- **SSD blocks** (Mamba-2 state-space duality) — scalar-per-head decay with
+  **per-channel state** and input-dependent (selective) Δ/B/C. This is the
+  primitive Mamba-3 builds on, and the default `ssm_kind="ssd"`.
+- **Gated Delta Rule blocks** — matrix-valued associative memory with
+  data-dependent forget/write gates; targeted recall and overwrite.
+- **Sliding-window attention** (optional, `swa`) — for H1-style hybrid
+  ablations, since "some attention" is what carries retrieval in SSM hybrids.
 
-- **S4D-Complex blocks** — diagonal state-space models with input-dependent step sizes, grounded in continuous-time ODE dynamics. Good at tracking slowly evolving signal patterns across long sequences.
-- **Gated Delta Rule blocks** — matrix-valued associative memory with data-dependent forget and write gates. Good at targeted recall: writing new associations and selectively overwriting stale ones.
-
-These are interleaved 3:1 (S4 heavy), reflecting the hypothesis that continuous signal dynamics are the primary challenge, with associative memory as a supporting mechanism.
+> **Heads-up — this is a research pivot in progress.** The architecture and
+> tooling are implemented and tested; the *benchmark numbers are not filled in
+> yet* (they need GPU + datasets). See [EXPERIMENTS.md](EXPERIMENTS.md) for the
+> locked matrix and honest gaps, and [paper/PAPER_DRAFT.md](paper/PAPER_DRAFT.md)
+> for the manuscript skeleton.
 
 ---
 
-## Results
+## Install
 
-All runs use the default config (`hidden_dim=256`, `num_layers=12`, `num_heads=8`, ~8.1M params), AdamW with cosine schedule, `lr=3e-4`, `batch_size=64`, 50 epochs unless noted. Hardware: single CUDA GPU.
+```bash
+git clone https://github.com/kaelvalen/prism.git
+cd prism
+pip install -e ".[train,test]"      # CPU-friendly: pure-PyTorch reference paths
+pip install -e ".[gpu]"             # optional Triton kernels (FLA, mamba-ssm)
+```
 
-### CIFAR-10 — block ablation
+The pure-PyTorch reference paths run everywhere (no Triton/CUDA needed). The
+`gpu` extra adds the production kernels; everything falls back gracefully if
+they are absent.
 
-Tests the hypothesis that S4 + Delta interleave beats either component alone. Same param budget across all three runs.
+## Quickstart
 
-| Block pattern | Val acc | Best epoch | Notes |
-|---|---|---|---|
-| **Hybrid (S4 : Delta = 3 : 1)** | **88.4%** | 44 / 50 | converged; val loss plateau ~0.38 |
-| All-S4 | ? | ? | — |
-| All-Delta | ? | ? | — |
+```python
+import torch
+from prism import PRISMConfig, ModalityConfig, PRISMForClassification
 
-### PTB-XL ECG — 5-class superclass classification
+cfg = PRISMConfig(
+    hidden_dim=256, num_heads=8, num_layers=12,   # ~8M params, SSD+Delta 3:1
+    ssm_kind="ssd",                               # "ssd" (default) | "s4d_legacy"
+    modalities=[
+        ModalityConfig(name="ecg",   input_dim=12, num_classes=5),
+        ModalityConfig(name="image", input_dim=48, num_classes=10),
+    ],
+)
+model = PRISMForClassification(cfg)
 
-Tests modality transfer: same backbone, only projection + head change.
+ecg = torch.randn(4, 1000, 12)                    # 12-lead ECG
+out = model(ecg, modality="ecg", labels=torch.randint(0, 5, (4,)))
+print(out["loss"].item())
+```
 
-| Model | Val acc | Params | Notes |
-|---|---|---|---|
-| PRISM (hybrid) | ? | ~8M | — |
-| ResNet-1D baseline | ? | ? | — |
-| Transformer baseline | ? | ? | — |
+The layer mix is fully configurable:
 
-Reproduce with `scripts/run_benchmarks.sh`.
+```python
+PRISMConfig(num_layers=12, block_pattern="s4,s4,s4,swa, s4,s4,s4,swa, s4,s4,s4,swa")  # H1-style
+PRISMConfig(num_layers=4,  force_block_type="delta")                                  # all-delta ablation
+```
+
+## Reproducing the paper
+
+```bash
+DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks.sh
+python scripts/aggregate_results.py output/benchmarks      # mean ± std
+python scripts/bench_throughput.py --device cuda --seq-len 4096
+```
+
+One command per table row; full matrix, datasets, metric (macro-AUROC) and
+compute budget are in [EXPERIMENTS.md](EXPERIMENTS.md).
+
+## Benchmark numbers
+
+Primary metric on PTB-XL is **macro one-vs-rest AUROC** (Strodthoff et al. 2020),
+not accuracy. Baseline to match: `xresnet1d101` ≈ **0.928** macro AUC on the
+5-class super-diagnostic task (within ±0.005 bootstrap CI).
+
+| Model | params | sCIFAR-10 acc | PTB-XL super-diag AUC | Speech Cmds acc |
+|---|---|---|---|---|
+| ResNet1D (xresnet1d101) | ~8M | – | 0.928 *(lit.)* | – |
+| Small Transformer | ~8M | _TODO_ | _TODO_ | _TODO_ |
+| Mamba-2 only (SSD) | ~8M | _TODO_ | _TODO_ | _TODO_ |
+| Gated DeltaNet only | ~8M | _TODO_ | _TODO_ | _TODO_ |
+| **PRISM (SSD + Delta hybrid)** | ~8M | _TODO_ | _TODO_ | _TODO_ |
+| PRISM legacy (S4D + Delta) | ~8M | 0.884 acc *(prior, single-seed)* | _TODO_ | _TODO_ |
+
+The legacy `0.884` sCIFAR number is from the previous S4D backbone, kept only
+as a historical ablation row; see [EXPERIMENTS.md](EXPERIMENTS.md). All new
+numbers must be **mean ± std over ≥3 seeds**.
 
 ---
 
@@ -55,263 +115,120 @@ Reproduce with `scripts/run_benchmarks.sh`.
 
 ```
 Input (any modality)  [B, T, input_dim]
-        ↓
-ModalityProjection    Linear(input_dim → hidden_dim)   ← per-modality, lightweight
-        ↓
-PRISMBackbone
-  L0:  S4Block     ┐
-  L1:  S4Block     │  S4: continuous-time signal dynamics
-  L2:  S4Block     ┘
-  L3:  DeltaBlock  ←  associative memory write
-  L4:  S4Block     ┐
-  ...              │  (repeats, delta_every=4)
-  L11: DeltaBlock  ←  associative memory write
-        ↓
-Mean Pooling          [B, T, hidden_dim] → [B, hidden_dim]
-        ↓
-PerModalityHead       LayerNorm → Linear(hidden_dim → num_classes)   ← per-modality
-        ↓
-Output logits
+        │  ModalityProjection  Linear(input_dim → hidden_dim)   ← per-modality
+        ▼
+PRISMBackbone   (block_pattern of s4 / delta / swa)
+   s4    → SSDBlock     RMSNorm→Conv→SSD(selective scan)→res ; RMSNorm→SwiGLU→res
+   delta → DeltaBlock   RMSNorm→Conv→GatedDeltaRule→res       ; RMSNorm→SwiGLU→res
+   swa   → SWABlock     RMSNorm→SlidingWindowAttn(RoPE)→res   ; RMSNorm→SwiGLU→res
+        │  mean / last pooling
+        ▼  PerModalityHead  LayerNorm → Linear → logits
 ```
 
-### S4Block internals
+**SSD mixer** (`prism/modules/ssd.py`) — Mamba-2 state-space duality. `A` is a
+scalar per head (`A=-exp(A_log)`), decay `a_t = exp(Δ_t·A)`, and crucially the
+input is kept **per-channel** (`h_t = a_t h_{t-1} + (Δ_t x_t) ⊗ B_t`,
+`y_t = ⟨h_t, C_t⟩ + D x_t`). No mean-over-Dₕ collapse — that was the central
+weakness of the original S4D block, and the most important ablation in the
+paper (`ssm_kind="ssd"` vs `"s4d_legacy"`).
 
-```
-x → RMSNorm → ShortCausalConv1d → S4SSM(gated, complex diagonal) → residual
-  → RMSNorm → SwiGLU → residual
-```
+**Parallel scan** (`prism/modules/scan.py`) — the recurrence is solved with
+`torch.associative_scan` (fused HOP) or a vectorized Hillis-Steele fallback;
+neither uses strided indexed assignment. The original hand-derived Blelloch
+up/down-sweep is preserved in `scan_reference.py` for teaching and as an
+equivalence anchor.
 
-S4SSM uses a **complex diagonal A matrix** (S4D-Lin style) with **input-dependent step size** Δ_t = softplus(Linear(x_t)). The selectivity comes from Δ — the model learns how fast to evolve the state for each input token.
+**Gated delta rule** (`prism/modules/delta.py`) — `backend="reference"` is the
+from-scratch chunked solve (UT transform via `solve_triangular`);
+`backend="fla"` calls FLA's `chunk_gated_delta_rule` Triton kernel and falls
+back to the reference if FLA/CUDA are unavailable.
 
-Discrete recurrence (Zero-Order Hold, numerically stable):
-```
-Ā = exp(Δ·A)
-B̄ = expm1(Δ·A) / A · B
-h_t = Ā ⊙ h_{t-1} + B̄ · u_t
-y_t = 2·Re(C* ⊙ h_t) + D·u_t
-```
+## Backends
 
-### DeltaBlock internals
+| Component | `reference` (default) | production |
+|---|---|---|
+| SSD / S4D scan | Hillis-Steele (`scan_backend="reference"`) | `torch.associative_scan` (`"auto"`/`"assoc"`) + `torch.compile` |
+| Gated delta rule | pure-PyTorch chunked solve | FLA `chunk_gated_delta_rule` (`delta_backend="fla"`) |
 
-```
-x → RMSNorm → ShortCausalConv1d → GatedDeltaRule → residual
-  → RMSNorm → SwiGLU → residual
-```
+`tests/test_delta_equivalence.py` and `tests/test_scan_equivalence.py` assert
+the production backends are numerically equivalent to the references (the FLA
+case runs on GPU; it is skipped on CPU CI).
 
-GatedDeltaRule maintains a **Dh×Dh matrix state per head** — a proper associative memory. Per token:
-```
-S_t = α_t · [S_{t-1} − β_t · (S_{t-1} k_t) k_t^T] + β_t · v_t k_t^T
-o_t = S_t · q_t
-```
-
-α_t is a data-dependent forget gate (initialized near 1 for long memory). β_t controls write strength. The delta correction term `(S k) k^T` performs a targeted overwrite rather than simple accumulation.
-
----
-
-## Quick Start
+## Testing
 
 ```bash
-git clone https://github.com/kaelvalen/prism.git
-cd prism
-pip install -e ".[train,dev]"
-```
-
-```python
-import torch
-from prism import PRISMConfig, ModalityConfig, PRISMForClassification
-
-cfg = PRISMConfig(
-    hidden_dim=256,
-    num_heads=8,
-    num_layers=12,
-    modalities=[
-        ModalityConfig(name="ecg",   input_dim=12, num_classes=5),
-        ModalityConfig(name="image", input_dim=48, num_classes=10),
-    ]
-)
-
-model = PRISMForClassification(cfg)
-
-# ECG: 12-lead, 128 timesteps
-ecg = torch.randn(4, 128, 12)
-out = model(ecg, modality="ecg", labels=torch.randint(0, 5, (4,)))
-print(out["loss"].item())
-
-# Image: 64 patches of size 4×4×3=48
-img = torch.randn(4, 64, 48)
-out = model(img, modality="image", labels=torch.randint(0, 10, (4,)))
-print(out["loss"].item())
-```
-
----
-
-## Training
-
-Canonical entrypoint is **`train.py`** at the repo root (also available as **`prism-train`** after install). Legacy wrappers `scripts/train_image.py` and `scripts/train_ecg.py` forward to the same CLI.
-
-**Paths:** downloaded files default to **`./datasets/`** on disk. Python loaders live in the **`prism.data`** package (`prism/data/*.py`). `.gitignore` only ignores `/datasets/` and `/data/` at the **repository root**, so it cannot hide `prism/data/`.
-
-```bash
-# CIFAR-10 (torchvision auto-download under ./datasets/cifar)
-python train.py --modality image --epochs 50 --batch-size 64 --lr 3e-4
-
-# PTB-XL ECG — put files in ./datasets/ptbxl or pass a parent dir containing ptbxl/
-python train.py --modality ecg --epochs 50 --batch-size 32 --lr 3e-4 --data-root ./datasets
-
-# Synthetic mel-patch "audio" smoke / prototype (no files)
-python train.py --modality audio --epochs 5 --batch-size 32
-
-# Joint ECG + image on one shared backbone (alternating batches)
-python train.py --mode joint --epochs 20 --data-root ./datasets
-
-# Ablation: all-S4 or all-Delta blocks
-python train.py --modality image --block-pattern s4 --epochs 50
-python train.py --modality image --block-pattern delta --epochs 50
-
-# Optional YAML defaults (CLI overrides)
-python train.py --config configs/train.example.yaml --modality image --epochs 3
-
-# Logging & early stopping
-python train.py --modality image --tensorboard --early-stopping 5
-python train.py --modality image --wandb-project prism-runs
-
-# Full benchmark suite (CIFAR-10 ablations + ECG comparisons)
-bash scripts/run_benchmarks.sh
-```
-
-Key CLI flags:
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--modality` | `image` | `image`, `ecg`, or `audio` (single mode) |
-| `--mode` | `single` | `single` or `joint` (ecg + image) |
-| `--block-pattern` | `hybrid` | `hybrid` (S4/Delta mix), `s4`, or `delta` ablation |
-| `--epochs` | `50` | Training epochs |
-| `--batch-size` | `64` | Batch size |
-| `--lr` | `3e-4` | AdamW learning rate |
-| `--hidden-dim` | `256` | Model width |
-| `--num-layers` | `12` | Total blocks |
-| `--data-root` | `./datasets` | **Downloaded** data root (`datasets/cifar`, `datasets/ptbxl`). Loader **code** lives in the `prism.data` package — not the same path. |
-| `--tensorboard` | off | Logs under `--output-dir/tb/…` |
-| `--early-stopping` | `0` | Patience on val accuracy (`0` = disabled) |
-
-**Baselines** (1D ResNet on ECG, small Transformer on patches):
-
-```bash
-pip install -e ".[train]"
-python scripts/train_baseline.py --model transformer --task image --epochs 10
-python scripts/train_baseline.py --model resnet1d --task ecg --data-root ./datasets
-```
-
-**Hugging Face–style export** (folder with `config.json` + `pytorch_model.bin`; optional `transformers` subclasses via `get_prism_hf_classes()` when `[hf]` extra is installed):
-
-```python
-from prism.integrations.huggingface import save_pretrained_folder, load_pretrained_folder
-save_pretrained_folder(model, "exported/prism-cifar")
-model2 = load_pretrained_folder("exported/prism-cifar", map_location="cpu")
-```
-
----
-
-## Continuous integration
-
-GitHub Actions workflow **`.github/workflows/ci.yml`** installs CPU PyTorch, runs **Ruff**, then **pytest**. Locally:
-
-```bash
-pip install -e ".[dev]"
+pip install -e ".[test]"
+pytest                       # 111 tests: equivalence, shapes, gradcheck, state-passing, regression, property-based
 ruff check prism tests scripts train.py
-pytest
 ```
 
----
+- **Numerical equivalence** — scan backends and delta backends vs sequential/reference ground truth.
+- **Gradcheck** (float64) — scan, SSD mixer, delta rule.
+- **State-passing** — one-shot == chunked-with-carried-state (streaming correctness).
+- **Regression** — seed-locked golden losses.
+- **Property-based** (hypothesis) — finite outputs/loss/grads across random shapes; CPU determinism.
 
-## Configuration
+## Key config flags
 
-All hyperparameters live in `PRISMConfig`:
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `hidden_dim` | 256 | Model dimension |
-| `num_heads` | 8 | Heads in both block types |
-| `num_layers` | 12 | Total blocks |
-| `delta_every` | 4 | DeltaBlock every Nth layer (3:1 S4:Delta) |
-| `s4_state_mult` | 2 | SSM state size = head_dim × mult |
-| `s4_dt_min/max` | 0.001/0.1 | Step size range |
-| `delta_chunk_size` | 64 | Chunk size for delta prefill |
-| `qk_norm` | True | L2-normalize Q and K |
-| `gate_bias_init` | 4.0 | σ(α) ≈ 0.98 at init (long memory) |
-| `conv_kernel_size` | 4 | Short causal conv kernel |
-| `ffn_expand` | 2 | SwiGLU hidden multiplier |
-| `force_block_type` | `None` | Ablation: `"s4"` / `"delta"` / `None` for hybrid |
+| Field / CLI flag | Default | Description |
+|---|---|---|
+| `ssm_kind` / `--ssm-kind` | `ssd` | `ssd` (Mamba-2 selective) or `s4d_legacy` |
+| `block_pattern` / `--layer-pattern` | `None` | explicit per-layer tokens `s4,delta,swa` (overrides interleave) |
+| `delta_every` | 4 | DeltaBlock every Nth layer (3:1) when no explicit pattern |
+| `delta_backend` / `--delta-backend` | `reference` | `reference` or `fla` |
+| `scan_backend` / `--scan-backend` | `auto` | `auto` / `assoc` / `reference` |
+| `s4d_init` / `--s4d-init` | `lin` | S4D-Lin (`A=-½+iπn`) or `legacy` |
+| `swa_window` / `--swa-window` | 128 | sliding-window attention span |
+| `compile` / `--compile` | off | `torch.compile` the model in the trainer |
 
 ---
 
-## Repository Layout
+## Repository layout
 
 ```
 prism/
-├── config.py
-├── model.py
-├── training/              # shared Trainer, checkpoints, CLI backing train.py
-├── baselines/             # ResNet1D, small Transformer baselines
-├── integrations/          # HF-style save/load; optional PreTrainedModel shim
+├── config.py                 # PRISMConfig (ssm_kind, block_pattern, backends, …)
+├── model.py                  # projection → backbone → per-modality head
 ├── modules/
-├── heads/
-└── data/                  # Python package (source) — not the download folder
-    ├── ecg.py
-    ├── image.py
-    ├── audio.py           # synthetic mel patches (default) or custom .pt dumps
-    └── paths.py           # PTB-XL root resolution
-
-./datasets/                # default on-disk cache (gitignored at repo root only)
-
-train.py                   # main training CLI
-configs/train.example.yaml # optional YAML defaults
-scripts/
-├── train_image.py         # legacy → CLI with --modality image
-├── train_ecg.py           # legacy → CLI with --modality ecg
-├── train_baseline.py      # baseline training
-└── run_benchmarks.sh      # full ablation + baseline suite
-tests/                     # pytest
+│   ├── ssd.py                # SSDMixer / SSDBlock  (Mamba-2 SSD, per-channel)
+│   ├── s4.py                 # legacy S4D-Complex (ablation), parallel_scan wrapper
+│   ├── delta.py              # GatedDeltaRule (reference + FLA backends)
+│   ├── attention.py          # SlidingWindowAttention / SWABlock (RoPE)
+│   ├── scan.py               # associative_scan + Hillis-Steele scan backends
+│   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
+│   └── block.py              # build_block / forward_block dispatch
+├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
+├── baselines/                # ResNet1D, small Transformer
+└── data/                     # ecg / image / audio loaders
+EXPERIMENTS.md                # locked benchmark matrix + honest gaps
+paper/PAPER_DRAFT.md          # 4-page workshop manuscript skeleton
+scripts/                      # run_benchmarks.sh, bench_throughput.py, aggregate_results.py
+tests/                        # pytest suite
 ```
 
----
+## Honest scope
 
-## Design Decisions
+This is a **modality-portable architecture** (same arch + hyperparameters, one
+training run per modality), not yet a single-set-of-weights joint model — that
+true "modality-agnostic" result is the follow-up. The architecture is grounded
+in the 2024–2026 frontier (Mamba-2/3, Gated DeltaNet, FLA); the from-scratch
+reference implementations and their equivalence tests are the contribution
+alongside the cross-modal portability study. See [EXPERIMENTS.md](EXPERIMENTS.md)
+for what still needs doing before submission.
 
-**Why no modality-specific tokenizer?**
-The projection layer is intentionally minimal — a single Linear per modality. The claim is that the backbone should learn the dynamics, not the tokenizer. If PRISM works, it works because S4+Delta is a good model of continuous signals, not because we engineered good features.
+## Citation
 
-**Why S4D-Complex with input-dependent Δ?**
-Complex diagonal A gives the model access to oscillatory dynamics — useful for periodic signals like ECG. Input-dependent Δ (borrowed from Mamba) adds selectivity: the model learns which tokens deserve more "processing time" in state space.
+```bibtex
+@misc{prism2026,
+  title  = {PRISM: a modality-portable hybrid linear-recurrent backbone},
+  author = {Hakbilen, Mehmet Arda},
+  year   = {2026},
+  note   = {https://github.com/kaelvalen/prism}
+}
+```
 
-**Why 3:1 S4:Delta?**
-Signal continuity is the primary challenge in this domain. Delta blocks are powerful but expensive (O(Dh²) state). The 3:1 ratio keeps the associative memory as a supporting mechanism without dominating the compute budget.
+## Acknowledgments
 
-**Why per-modality heads, shared backbone?**
-The cleanest test of the agnostic backbone claim. If two modalities can share all layers except a single linear head and still achieve competitive performance, the backbone is doing real work.
-
----
-
-## Roadmap
-
-- [x] CIFAR-10 hybrid baseline (88.4% val acc, 50 epochs)
-- [ ] CIFAR-10 ablation: All-S4 and All-Delta runs
-- [ ] PTB-XL ECG: PRISM vs ResNet-1D vs Transformer baseline
-- [ ] Triton kernel for chunked delta rule (target: 5-10× prefill speedup)
-- [ ] Streaming decode with carry states (O(1) per token, O(D²) memory)
-- [ ] MoE SwiGLU (DeepSeekMoE-style shared expert) behind config flag
-- [ ] Third modality: audio (real mel spectrogram patches, not synthetic)
-- [ ] HuggingFace-compatible `PreTrainedModel` shim
-
----
-
-## What This Is — and Isn't
-
-**Is:** A clean, tested implementation of a hybrid continuous-time SSM + associative memory architecture, designed to process heterogeneous signal modalities through a single backbone. The math is correct; the architecture is grounded in the 2024–2026 frontier of efficient sequence models (S4D, GatedDeltaNet, Mamba-2).
-
-**Isn't:** A production system or a claim that one backbone beats specialized architectures on all tasks. PRISM is a research hypothesis: *shared continuous-time dynamics are sufficient for modality-agnostic sequence modeling*. The experiments are the test — and the test is still in progress.
-
----
-
-*Architecture critiques, issues, and ablation results welcome.*
+Builds on ideas and (optionally) kernels from Mamba-2 / Mamba-3 (Dao, Gu et al.),
+Gated DeltaNet (Yang, Kautz, Hatamizadeh et al.), and
+[flash-linear-attention](https://github.com/fla-org/flash-linear-attention).

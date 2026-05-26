@@ -62,6 +62,13 @@ class Trainer:
         self.device = device
         self.tcfg = tcfg or TrainerConfig()
         self._amp_dtype = _resolve_amp(self.tcfg.amp)
+        # Optional torch.compile of the whole model (config-gated). Falls back
+        # silently if the backend is unavailable (e.g. no Triton / CPU-only).
+        if getattr(self.cfg, "compile", False):
+            try:
+                self.model = torch.compile(self.model)
+            except Exception:
+                pass
         self._writer = None
         if self.tcfg.tensorboard_dir:
             from torch.utils.tensorboard import SummaryWriter

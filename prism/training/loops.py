@@ -79,6 +79,36 @@ def evaluate_epoch(
     return total_loss / n, total_acc / n
 
 
+@torch.no_grad()
+def evaluate_macro_auc(
+    model: PRISMForClassification,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    modality: str,
+    num_classes: int,
+    *,
+    amp_dtype: torch.dtype | None = None,
+) -> float:
+    """Macro one-vs-rest AUROC over the whole loader — the PTB-XL metric.
+
+    Accumulates logits/labels across batches (datasets are small) and computes
+    a single macro AUROC, matching the Strodthoff et al. evaluation protocol.
+    """
+    from prism.training.metrics import roc_auc_ovr_macro
+
+    model.train(False)
+    all_logits, all_labels = [], []
+    for x, labels in loader:
+        x = x.to(device)
+        with _autocast(device, amp_dtype):
+            out = model(x, modality=modality)
+        all_logits.append(out["logits"].float().cpu())
+        all_labels.append(labels.cpu())
+    logits = torch.cat(all_logits)
+    labels = torch.cat(all_labels)
+    return roc_auc_ovr_macro(logits, labels, num_classes)
+
+
 def cycle_loader(loader: torch.utils.data.DataLoader) -> Iterator:
     while True:
         for batch in loader:
