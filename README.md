@@ -30,6 +30,11 @@ The backbone interleaves two complementary mixers (plus optional attention):
 - **Sliding-window attention** (optional, `swa`) — for H1-style hybrid
   ablations, since "some attention" is what carries retrieval in SSM hybrids.
 
+The per-layer role tokens are defined in `prism.layer_tokens` as `("s4", "delta",
+"swa")`. `prism.modules.block.BLOCK_REGISTRY` maps each token to a builder
+function; new mixers can be registered with `@register_block("token")` without
+changing the core config or model code.
+
 > **Heads-up — this is a research pivot in progress.** The architecture and
 > tooling are implemented and tested; the *benchmark numbers are not filled in
 > yet* (they need GPU + datasets). See [EXPERIMENTS.md](EXPERIMENTS.md) for the
@@ -40,6 +45,24 @@ The backbone interleaves two complementary mixers (plus optional attention):
 
 ## Install
 
+### Option A: Nix + uv (recommended for GPU development)
+
+If you have the [Nix](https://nixos.org/download/) package manager with flakes enabled:
+
+```bash
+git clone https://github.com/kaelvalen/prism.git
+cd prism
+nix develop
+```
+
+This gives you a shell with `uv`, the CUDA toolkit, git, and just. Python
+dependencies are installed into a local `.venv` managed by `uv` (declared in
+`pyproject.toml`). The Nix shell does **not** ship a Nix-built PyTorch; instead
+it lets `uv` resolve PyTorch from PyPI against your system NVIDIA driver, which
+keeps fast-moving packages such as `flash-linear-attention` practical to track.
+
+### Option B: pip
+
 ```bash
 git clone https://github.com/kaelvalen/prism.git
 cd prism
@@ -49,7 +72,7 @@ pip install -e ".[gpu]"             # optional Triton kernels (FLA, mamba-ssm)
 
 The pure-PyTorch reference paths run everywhere (no Triton/CUDA needed). The
 `gpu` extra adds the production kernels; everything falls back gracefully if
-they are absent.
+they are absent or incompatible with the installed PyTorch/CUDA pair.
 
 ## Quickstart
 
@@ -89,6 +112,36 @@ python scripts/bench_throughput.py --device cuda --seq-len 4096
 
 One command per table row; full matrix, datasets, metric (macro-AUROC) and
 compute budget are in [EXPERIMENTS.md](EXPERIMENTS.md).
+
+## Inference
+
+After training, use the per-task inference scripts. Both load the best
+validation checkpoint, run the model on the test fold, and can write a JSON
+report:
+
+```bash
+# PTB-XL super-diagnostic (multi-label) or single-label task
+python scripts/infer_ecg.py \
+  --checkpoint output/ptbxl_superdiag/best.pt \
+  --task superdiag \
+  --output output/ptbxl_superdiag/test_report.json
+
+# Sequential CIFAR-10
+python scripts/infer_image.py \
+  --checkpoint output/cifar10/best.pt \
+  --output output/cifar10/test_report.json
+```
+
+## Reproducibility
+
+The trainer supports the standard levers:
+
+- `--seed N` sets Python/NumPy/PyTorch RNGs and, with `--deterministic`, enables
+  `CUBLAS_WORKSPACE_CONFIG` for deterministic CUDA ops where possible.
+- Checkpoints contain optimizer, scheduler, RNG state, and global step; resume
+  with `--resume path/to/last.pt`.
+- `last.pt` is written every epoch; `best.pt` is selected by the validation
+  metric (macro-AUROC for ECG tasks, accuracy for image/audio).
 
 ## Benchmark numbers
 
@@ -145,21 +198,23 @@ back to the reference if FLA/CUDA are unavailable.
 
 ## Backends
 
-| Component | `reference` (default) | production |
-|---|---|---|
-| SSD / S4D scan | Hillis-Steele (`scan_backend="reference"`) | `torch.associative_scan` (`"auto"`/`"assoc"`) + `torch.compile` |
-| Gated delta rule | pure-PyTorch chunked solve | FLA `chunk_gated_delta_rule` (`delta_backend="fla"`) |
+| Component | `reference` (default) | production | fallback |
+|---|---|---|---|
+| SSD / S4D scan | Hillis-Steele (`scan_backend="reference"`) | `torch.associative_scan` (`"auto"`/`"assoc"`) + `torch.compile` | automatic to Hillis-Steele if `associative_scan` unavailable |
+| Gated delta rule | pure-PyTorch chunked solve | FLA `chunk_gated_delta_rule` (`delta_backend="fla"`) | automatic to reference if FLA missing, not on CUDA, wrong dtype, or Triton fails |
 
 `tests/test_delta_equivalence.py` and `tests/test_scan_equivalence.py` assert
-the production backends are numerically equivalent to the references (the FLA
-case runs on GPU; it is skipped on CPU CI).
+the production backends are numerically equivalent to the references. The FLA
+case is skipped when the Triton kernel cannot execute on the current
+PyTorch/CUDA/driver combination.
 
 ## Testing
 
 ```bash
-pip install -e ".[test]"
-pytest                       # 111 tests: equivalence, shapes, gradcheck, state-passing, regression, property-based
+# inside nix develop, or with the pip venv activated
+pytest                       # 111 passed, 3 skipped (FLA probe skips when Triton unavailable)
 ruff check prism tests scripts train.py
+ruff format --check prism tests scripts train.py
 ```
 
 - **Numerical equivalence** — scan backends and delta backends vs sequential/reference ground truth.
@@ -167,6 +222,7 @@ ruff check prism tests scripts train.py
 - **State-passing** — one-shot == chunked-with-carried-state (streaming correctness).
 - **Regression** — seed-locked golden losses.
 - **Property-based** (hypothesis) — finite outputs/loss/grads across random shapes; CPU determinism.
+- **FLA probe** — `tests/test_delta_equivalence.py` runs the FLA Triton kernel on a tiny tensor before declaring the backend available; if it fails (missing Triton, driver mismatch, PyTorch/FLA ABI incompatibility), the test skips and `GatedDeltaRule(backend="fla")` falls back to the reference path.
 
 ## Key config flags
 
@@ -189,7 +245,9 @@ ruff check prism tests scripts train.py
 ```
 prism/
 ├── config.py                 # PRISMConfig (ssm_kind, block_pattern, backends, …)
+├── layer_tokens.py           # dependency-free {s4, delta, swa} role tokens
 ├── model.py                  # projection → backbone → per-modality head
+├── inference.py              # shared checkpoint loader for inference scripts
 ├── modules/
 │   ├── ssd.py                # SSDMixer / SSDBlock  (Mamba-2 SSD, per-channel)
 │   ├── s4.py                 # legacy S4D-Complex (ablation), parallel_scan wrapper
@@ -197,13 +255,14 @@ prism/
 │   ├── attention.py          # SlidingWindowAttention / SWABlock (RoPE)
 │   ├── scan.py               # associative_scan + Hillis-Steele scan backends
 │   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
-│   └── block.py              # build_block / forward_block dispatch
+│   └── block.py              # BLOCK_REGISTRY + PRISMBlock protocol + build_block dispatch
 ├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
 ├── baselines/                # ResNet1D, small Transformer
 └── data/                     # ecg / image / audio loaders
 EXPERIMENTS.md                # locked benchmark matrix + honest gaps
 paper/PAPER_DRAFT.md          # 4-page workshop manuscript skeleton
-scripts/                      # run_benchmarks.sh, bench_throughput.py, aggregate_results.py
+scripts/                      # run_benchmarks.sh, bench_throughput.py, aggregate_results.py,
+                              # infer_ecg.py, infer_image.py
 tests/                        # pytest suite
 ```
 

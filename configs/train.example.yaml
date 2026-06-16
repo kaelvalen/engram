@@ -7,8 +7,9 @@ train:
   lr: 0.0003
   hidden_dim: 256
   num_layers: 12
-  block_pattern: hybrid  # hybrid | s4 | delta
-  amp: bf16              # off | bf16
+  # block_pattern: null          # explicit per-layer tokens, e.g. "s4,s4,s4,delta,..."
+  # force_block_type: null       # "s4" or "delta" for an all-one-type ablation
+  amp: bf16                     # off | bf16
 
 model:
   num_heads: 8
