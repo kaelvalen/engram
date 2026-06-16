@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
 import torch
 import torch.nn as nn
 
+from prism.layer_tokens import LAYER_TOKENS
+
 from .attention import SWABlock
 from .delta import DeltaBlock, DeltaState
 from .s4 import S4Block
@@ -13,6 +15,19 @@ from .ssd import SSDBlock
 
 if TYPE_CHECKING:
     from prism.config import PRISMConfig
+
+__all__ = [
+    "LAYER_TOKENS",
+    "BlockState",
+    "SSDBlockState",
+    "DeltaBlockState",
+    "SWABlockState",
+    "PRISMBlock",
+    "BlockBuilder",
+    "BLOCK_REGISTRY",
+    "register_block",
+    "build_block",
+]
 
 
 @dataclass
