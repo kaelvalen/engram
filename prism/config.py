@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from prism.modules.block import LAYER_TOKENS
+from prism.layer_tokens import LAYER_TOKENS
 
 
 @dataclass

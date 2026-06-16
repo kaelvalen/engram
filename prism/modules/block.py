@@ -70,16 +70,14 @@ class PRISMBlock(Protocol):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | DeltaState | None]: ...
 
 
+from prism.layer_tokens import LAYER_TOKENS
+
 BlockBuilder = Callable[["PRISMConfig"], nn.Module]
 
 # Registry mapping per-layer role tokens to builder callables.  The ``s4`` token
 # resolves to SSD or S4D depending on ``PRISMConfig.ssm_kind``, keeping the
 # public ``block_pattern`` API unchanged.
 BLOCK_REGISTRY: dict[str, BlockBuilder] = {}
-
-# Valid per-layer role tokens.  Defined here so the registry is the single source
-# of truth; ``prism.config`` imports this list.
-LAYER_TOKENS = ("s4", "delta", "swa")
 
 
 def register_block(
