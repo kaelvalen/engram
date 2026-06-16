@@ -50,16 +50,17 @@ class PRISMBackbone(nn.Module):
 
 
 class PerModalityHead(nn.Module):
-    """Independent classifier head for each modality."""
+    """Independent classifier head for each modality, with optional dropout."""
 
-    def __init__(self, modalities: list[ModalityConfig], hidden_dim: int):
+    def __init__(self, modalities: list[ModalityConfig], hidden_dim: int, dropout: float = 0.0):
         super().__init__()
+        self.drop = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
         self.heads = nn.ModuleDict(
             {m.name: nn.Linear(hidden_dim, m.num_classes) for m in modalities}
         )
 
     def forward(self, x: torch.Tensor, modality: str) -> torch.Tensor:
-        return self.heads[modality](x)
+        return self.heads[modality](self.drop(x))
 
 
 class PRISMForClassification(nn.Module):
@@ -80,7 +81,7 @@ class PRISMForClassification(nn.Module):
         self.cfg = cfg
         self.projection = ModalityProjection(cfg.modalities, cfg.hidden_dim)
         self.backbone = PRISMBackbone(cfg)
-        self.head = PerModalityHead(cfg.modalities, cfg.hidden_dim)
+        self.head = PerModalityHead(cfg.modalities, cfg.hidden_dim, dropout=cfg.dropout)
         self.norm = nn.ModuleDict({m.name: nn.LayerNorm(cfg.hidden_dim) for m in cfg.modalities})
 
     def forward(
@@ -123,9 +124,7 @@ class PRISMForClassification(nn.Module):
         if labels is not None:
             if mcfg.multilabel:
                 # multi-hot targets [B, num_classes]; BCEWithLogits over each class.
-                out["loss"] = nn.functional.binary_cross_entropy_with_logits(
-                    logits, labels.float()
-                )
+                out["loss"] = nn.functional.binary_cross_entropy_with_logits(logits, labels.float())
             else:
                 out["loss"] = nn.functional.cross_entropy(logits, labels)
 

@@ -75,6 +75,10 @@ class PRISMConfig:
     conv_kernel_size: int = 4
     ffn_expand: int = 2
 
+    # Dropout applied after mixer/attention and FFN sublayers, and before the
+    # classification head. 0.0 disables dropout (default for the research baseline).
+    dropout: float = 0.0
+
     # torch.compile the backbone (trainer reads this flag).
     compile: bool = False
 
@@ -103,11 +107,54 @@ class PRISMConfig:
         assert self.scan_backend in ("auto", "assoc", "reference"), (
             f"scan_backend must be 'auto', 'assoc', or 'reference', got {self.scan_backend!r}"
         )
+        # Positive dimensional hyperparameters.
+        for name in (
+            "hidden_dim",
+            "num_heads",
+            "num_layers",
+            "s4_state_mult",
+            "ssd_state_dim",
+            "delta_chunk_size",
+            "conv_kernel_size",
+            "ffn_expand",
+            "swa_window",
+        ):
+            val = getattr(self, name)
+            if not isinstance(val, int) or val <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {val!r}")
+        if not (0 < self.s4_dt_min < self.s4_dt_max):
+            raise ValueError(
+                f"s4_dt_min must be positive and less than s4_dt_max, "
+                f"got dt_min={self.s4_dt_min}, dt_max={self.s4_dt_max}"
+            )
+        if not (0.0 <= self.dropout < 1.0):
+            raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
+        # Modality sanity checks.
+        if not self.modalities:
+            raise ValueError("PRISMConfig.modalities must contain at least one ModalityConfig")
+        modality_names = [m.name for m in self.modalities]
+        if len(modality_names) != len(set(modality_names)):
+            raise ValueError(f"Modality names must be unique, got {modality_names}")
+        for m in self.modalities:
+            if m.input_dim <= 0:
+                raise ValueError(
+                    f"Modality '{m.name}' input_dim must be positive, got {m.input_dim}"
+                )
+            if m.num_classes <= 0:
+                raise ValueError(
+                    f"Modality '{m.name}' num_classes must be positive, got {m.num_classes}"
+                )
         # Normalize an explicit block_pattern string → list[str].
         if isinstance(self.block_pattern, str):
             self.block_pattern = [
                 tok for tok in self.block_pattern.replace(",", " ").split() if tok
             ]
+        if self.block_pattern is not None and self.force_block_type is not None:
+            raise ValueError(
+                "block_pattern and force_block_type cannot both be set; "
+                "use block_pattern for an explicit per-layer pattern or "
+                "force_block_type for an all-one-type ablation."
+            )
         if self.block_pattern is not None:
             bad = [t for t in self.block_pattern if t not in LAYER_TOKENS]
             if bad:
@@ -120,12 +167,15 @@ class PRISMConfig:
                     f"{self.num_layers}"
                 )
         elif self.force_block_type is None:
-            assert self.delta_every > 0, f"delta_every must be positive, got {self.delta_every}"
+            if self.delta_every <= 0:
+                raise ValueError(f"delta_every must be positive, got {self.delta_every}")
         else:
-            assert self.force_block_type in ("s4", "delta"), (
-                f"force_block_type must be 's4', 'delta', or None, got {self.force_block_type!r}"
-            )
-        assert self.pool_type in ["mean", "last"], f"Unknown pool_type: {self.pool_type}"
+            if self.force_block_type not in ("s4", "delta"):
+                raise ValueError(
+                    f"force_block_type must be 's4', 'delta', or None, got {self.force_block_type!r}"
+                )
+        if self.pool_type not in ("mean", "last"):
+            raise ValueError(f"pool_type must be 'mean' or 'last', got {self.pool_type!r}")
 
     @property
     def head_dim(self) -> int:
