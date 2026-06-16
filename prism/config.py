@@ -17,6 +17,10 @@ class ModalityConfig:
     num_classes: int
     patch_size: int | None = None
     window_size: int | None = None
+    # Multi-label task (e.g. PTB-XL, where a record can carry several diagnostic
+    # superclasses). Selects BCEWithLogits loss + multi-hot targets + macro AUROC
+    # instead of softmax cross-entropy + argmax accuracy.
+    multilabel: bool = False
 
 
 @dataclass

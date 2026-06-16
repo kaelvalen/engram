@@ -81,18 +81,26 @@ def _build_loaders_single(
         from prism.data.ecg import get_ecg_loaders
 
         ecg_root = resolve_ptbxl_root(args.data_root)
+        # Any task other than legacy super-diagnostic is inherently multi-label.
+        ml = args.ecg_multilabel or args.ecg_task != "superdiag"
         train_loader, val_loader, _test = get_ecg_loaders(
             root=ecg_root,
             batch_size=args.batch_size,
             window_size=args.window_size,
             num_workers=args.num_workers,
+            multilabel=ml,
+            task=args.ecg_task,
         )
+        # num_classes is task-dependent (5 for super-diag, more for diag/subdiag/…);
+        # read it from the loaded vocabulary rather than hardcoding.
+        num_classes = train_loader.dataset.num_classes
         modalities = [
             ModalityConfig(
                 name="ecg",
                 input_dim=12,
-                num_classes=5,
+                num_classes=num_classes,
                 window_size=args.window_size,
+                multilabel=ml,
             )
         ]
     else:
@@ -382,7 +390,26 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--patch-size", type=int, default=4, help="CIFAR patch side (image / joint)"
     )
-    parser.add_argument("--window-size", type=int, default=250, help="ECG timesteps (ecg / joint)")
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        default=1000,
+        help="ECG timesteps. Default 1000 = full 10 s record at 100 Hz, matching the "
+        "xresnet1d101 baseline; shorter windows discard signal and bias the comparison.",
+    )
+    parser.add_argument(
+        "--ecg-multilabel",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="PTB-XL multi-label superclass targets + BCE loss + macro AUROC (paper protocol).",
+    )
+    parser.add_argument(
+        "--ecg-task",
+        type=str,
+        default="superdiag",
+        choices=["superdiag", "subdiag", "diag", "form", "rhythm", "all"],
+        help="PTB-XL task group. Non-superdiag tasks are always multi-label.",
+    )
     parser.add_argument("--mel-bins", type=int, default=64, help="audio: mel frequency bins")
     parser.add_argument("--patch-frames", type=int, default=4, help="audio: frames per patch token")
     parser.add_argument("--audio-num-classes", type=int, default=10)
@@ -424,6 +451,10 @@ def main(argv: list[str] | None = None) -> None:
     train_loader, val_loader, modality, cfg = _build_loaders_single(args)
     model = PRISMForClassification(cfg).to(device)
 
+    multilabel_eval = modality == "ecg" and (
+        getattr(args, "ecg_multilabel", False) or getattr(args, "ecg_task", "superdiag") != "superdiag"
+    )
+
     tcfg = TrainerConfig(
         epochs=args.epochs,
         lr=args.lr,
@@ -434,18 +465,29 @@ def main(argv: list[str] | None = None) -> None:
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name or f"prism-{modality}",
         amp=args.amp,
+        select_metric="val_macro_auc" if multilabel_eval else "val_acc",
     )
     trainer = Trainer(model, cfg, device=device, tcfg=tcfg)
 
     def on_epoch(epoch: int, m: dict[str, float]) -> None:
+        auc_msg = ""
+        if multilabel_eval:
+            from prism.training.loops import evaluate_multilabel_auc
+
+            auc = evaluate_multilabel_auc(
+                model, val_loader, device, modality, amp_dtype=_resolve_amp(args.amp)
+            )
+            m["val_macro_auc"] = auc
+            auc_msg = f" | val macro-AUC: {auc:.4f}"
         logger.info(
-            "[%03d/%d] train loss: %.4f acc: %.4f | val loss: %.4f acc: %.4f",
+            "[%03d/%d] train loss: %.4f acc: %.4f | val loss: %.4f acc: %.4f%s",
             epoch,
             args.epochs,
             m["train_loss"],
             m["train_acc"],
             m["val_loss"],
             m["val_acc"],
+            auc_msg,
         )
 
     logger.info(

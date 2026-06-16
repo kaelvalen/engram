@@ -19,6 +19,21 @@ def _check_ecg_failure_rate(failed: list, total: int) -> None:
         )
 
 
+def _fit_window(signal: np.ndarray, window_size: int) -> np.ndarray:
+    """Trim or right-pad a [T, 12] signal to exactly ``window_size`` timesteps.
+
+    The default window is the *full* record (1000 samples = 10 s at 100 Hz), so
+    this is normally a no-op: truncating to a short prefix would discard most of
+    the ECG and unfairly handicap the model relative to baselines like
+    xresnet1d101, which consume the whole 1000-sample signal.
+    """
+    t = signal.shape[0]
+    if t >= window_size:
+        return signal[:window_size]
+    pad = np.zeros((window_size - t, signal.shape[1]), dtype=signal.dtype)
+    return np.concatenate([signal, pad], axis=0)
+
+
 class PTBXLDataset(Dataset):
     """PTB-XL ECG Dataset loader.
 
@@ -40,8 +55,10 @@ class PTBXLDataset(Dataset):
         root: str,
         split: str = "train",  # "train" | "val" | "test"
         sampling_rate: int = 100,  # 100 veya 500 Hz
-        window_size: int = 128,  # kaç timestamp per sample
+        window_size: int = 1000,  # full 10 s record at 100 Hz (use 5000 for 500 Hz)
         normalize: bool = True,
+        multilabel: bool = False,  # multi-hot superclass targets (PTB-XL protocol)
+        task: str = "superdiag",  # superdiag | subdiag | diag | form | rhythm | all
     ):
         super().__init__()
         self.root = root
@@ -49,7 +66,12 @@ class PTBXLDataset(Dataset):
         self.sampling_rate = sampling_rate
         self.window_size = window_size
         self.normalize = normalize
+        self.task = task
+        # Any task other than the legacy single-label super-diagnostic is multi-label.
+        self.multilabel = multilabel or task != "superdiag"
 
+        self.classes: list[str] = list(self.SUPERCLASSES)  # set in _load from the vocab
+        self.num_classes: int = len(self.classes)
         self.data, self.labels = self._load()
 
     def _load(self):
@@ -59,33 +81,25 @@ class PTBXLDataset(Dataset):
         except ImportError:
             raise ImportError("pip install wfdb pandas")
 
+        from prism.data.ptbxl_tasks import record_labels, task_vocab
+
         df = pd.read_csv(os.path.join(self.root, "ptbxl_database.csv"), index_col="ecg_id")
         import ast
 
         df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
 
-        # scp_statements'ten superclass mapping yükle
-        scp = pd.read_csv(os.path.join(self.root, "scp_statements.csv"), index_col=0)
-        # PTB-XL diagnostic superclasses (NORM, MI, STTC, CD, HYP) are defined
-        # for diagnostic SCP statements, not rhythm statements. Filtering on
-        # ``rhythm`` silently drops the labels this classifier is trained to predict.
-        if "diagnostic" in scp.columns:
-            scp = scp[scp.diagnostic == 1.0]
+        # Full scp_statements table (NOT pre-filtered — task_vocab/record_labels
+        # filter per task). Plain-dict view keeps the mapping logic pandas-free.
+        scp_df = pd.read_csv(os.path.join(self.root, "scp_statements.csv"), index_col=0)
+        scp = scp_df.to_dict("index")
 
-        def get_label(codes):
-            for code in codes:
-                if code in scp.index:
-                    sc = (
-                        scp.loc[code, "diagnostic_superclass"]
-                        if "diagnostic_superclass" in scp.columns
-                        else None
-                    )
-                    if sc in self.SUPERCLASSES:
-                        return self.SUPERCLASSES.index(sc)
-            return -1
+        # Split-independent label vocabulary for the task.
+        self.classes = task_vocab(scp, self.task)
+        self.num_classes = len(self.classes)
+        class_index = {c: i for i, c in enumerate(self.classes)}
 
-        df["label"] = df["scp_codes"].apply(get_label)
-        df = df[df["label"] >= 0]
+        df["labelnames"] = df["scp_codes"].apply(lambda c: record_labels(scp, c, self.task))
+        df = df[df["labelnames"].apply(len) > 0]  # keep records with ≥1 label
 
         # split: strat_fold 1-8 train, 9 val, 10 test
         if self.split == "train":
@@ -95,14 +109,12 @@ class PTBXLDataset(Dataset):
         else:
             df = df[df["strat_fold"] == 10]
 
-        folder = f"records{self.sampling_rate}"
         data, labels = [], []
         failed: list = []
 
         for ecg_id, row in df.iterrows():
             path = os.path.join(
                 self.root,
-                folder,
                 row["filename_lr"] if self.sampling_rate == 100 else row["filename_hr"],
             )
             try:
@@ -113,12 +125,7 @@ class PTBXLDataset(Dataset):
                 failed.append(ecg_id)
                 continue
 
-            # window: ilk window_size timestamp al
-            if signal.shape[0] >= self.window_size:
-                signal = signal[: self.window_size]
-            else:
-                pad = np.zeros((self.window_size - signal.shape[0], 12), dtype=np.float32)
-                signal = np.concatenate([signal, pad], axis=0)
+            signal = _fit_window(signal, self.window_size)
 
             if self.normalize:
                 mean = signal.mean(axis=0, keepdims=True)
@@ -126,24 +133,36 @@ class PTBXLDataset(Dataset):
                 signal = (signal - mean) / std
 
             data.append(signal)
-            labels.append(row["label"])
+            labels.append(row["labelnames"])  # list[str] of class names for this record
 
         total = len(df)
         loaded = total - len(failed)
         logger.info(
-            "ECG split=%s: loaded %d/%d records (%d failed)", self.split, loaded, total, len(failed)
+            "ECG split=%s task=%s classes=%d: loaded %d/%d records (%d failed)",
+            self.split, self.task, self.num_classes, loaded, total, len(failed),
         )
         _check_ecg_failure_rate(failed, total)
 
-        return np.stack(data), np.array(labels, dtype=np.int64)
+        if self.multilabel:
+            multihot = np.zeros((len(labels), self.num_classes), dtype=np.float32)
+            for i, names in enumerate(labels):
+                for name in names:
+                    multihot[i, class_index[name]] = 1.0
+            return np.stack(data), multihot
+        # legacy single-label super-diagnostic: first class name → its index
+        idxs = np.array([class_index[names[0]] for names in labels], dtype=np.int64)
+        return np.stack(data), idxs
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
+        label = self.labels[idx]
+        # multi-hot float vector (multilabel) or scalar long (single-label)
+        label_t = torch.from_numpy(label) if self.multilabel else torch.tensor(label)
         return (
             torch.from_numpy(self.data[idx]),  # [window_size, 12]
-            torch.tensor(self.labels[idx]),
+            label_t,
         )
 
 
@@ -152,10 +171,13 @@ def get_ecg_loaders(
     batch_size: int = 32,
     window_size: int = 128,
     num_workers: int = 4,
+    multilabel: bool = False,
+    task: str = "superdiag",
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
-    train = PTBXLDataset(root, "train", window_size=window_size)
-    val = PTBXLDataset(root, "val", window_size=window_size)
-    test = PTBXLDataset(root, "test", window_size=window_size)
+    kw = dict(window_size=window_size, multilabel=multilabel, task=task)
+    train = PTBXLDataset(root, "train", **kw)
+    val = PTBXLDataset(root, "val", **kw)
+    test = PTBXLDataset(root, "test", **kw)
 
     return (
         DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=num_workers),

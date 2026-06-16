@@ -17,9 +17,10 @@ strong convolutional baselines across 12-lead ECG (PTB-XL), spoken commands, and
 sequential images. PRISM interleaves Mamba-2-style SSD blocks (per-channel
 selective state) with Gated Delta Rule blocks, optionally with sliding-window
 attention. We contribute (i) a from-scratch, pure-PyTorch reference
-implementation of the SSD scan and the chunked gated delta rule, with full
-numerical-equivalence tests against `torch.associative_scan` and the FLA Triton
-kernels; and (ii) a cross-modal portability study. `[TODO: headline result —
+implementation of the SSD scan and the chunked gated delta rule, with
+numerical-equivalence tests against `torch.associative_scan` (verified on CPU)
+and the FLA Triton kernels (gated by a GPU test — `[TODO: confirm pass before
+claiming FLA equivalence]`); and (ii) a cross-modal portability study. `[TODO: headline result —
 e.g. "PRISM matches xresnet1d101 within bootstrap CI on PTB-XL super-diagnostic
 (0.9XX vs 0.928 macro AUC) while reusing the same backbone on audio and vision".]`
 
@@ -41,8 +42,11 @@ new architecture:
 1. A clean from-scratch reference implementation of (a) the Mamba-2 SSD
    selective scan and (b) the chunked gated delta rule (UT-transform /
    triangular-solve), each numerically equivalent — verified by test — to the
-   production `torch.associative_scan` and FLA kernels. This is a reusable,
-   auditable artifact for the linear-attention community.
+   production `torch.associative_scan` (CPU-verified) and FLA kernels (GPU test
+   `tests/test_delta_equivalence.py` is the gate — must pass before the FLA
+   equivalence claim is made; the `g` mapping is per-step log-decay and is
+   version-dependent). This is a reusable, auditable artifact for the
+   linear-attention community.
 2. A modality-portability study on PTB-XL (primary), Speech Commands, and
    sequential CIFAR-10, with the same backbone and no per-modality tuning, plus
    ablations isolating the per-channel-selectivity, layer-ratio, depth, and

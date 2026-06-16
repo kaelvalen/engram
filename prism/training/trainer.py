@@ -44,6 +44,10 @@ class TrainerConfig:
     wandb_project: str | None = None
     wandb_run_name: str | None = None
     amp: str | None = None  # None | "bf16"
+    # Metric key used to pick the best checkpoint. "val_acc" (default) or e.g.
+    # "val_macro_auc" for multi-label PTB-XL. The metric must be present in the
+    # per-epoch metrics dict (an epoch_callback may add it before selection).
+    select_metric: str = "val_acc"
 
 
 class Trainer:
@@ -153,15 +157,17 @@ class Trainer:
             if epoch_callback:
                 epoch_callback(epoch, metrics)
 
-            improved = val_acc > best_val + self.tcfg.early_stopping_min_delta
+            # Selection metric (callback may have added e.g. val_macro_auc above).
+            current = metrics.get(self.tcfg.select_metric, val_acc)
+            improved = current > best_val + self.tcfg.early_stopping_min_delta
             if improved:
-                best_val = val_acc
+                best_val = current
                 save_checkpoint(
                     output_dir / best_filename,
                     epoch=epoch,
                     model_state=self.model.state_dict(),
                     cfg=self.cfg,
-                    metrics={"val_acc": val_acc, "val_loss": val_loss},
+                    metrics=dict(metrics),
                 )
                 if patience_left is not None:
                     patience_left = self.tcfg.early_stopping_patience

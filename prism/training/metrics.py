@@ -54,6 +54,52 @@ def roc_auc_ovr_macro(logits: torch.Tensor, labels: torch.Tensor, num_classes: i
     return sum(aucs) / len(aucs)
 
 
+def bootstrap_auroc_ci(
+    scores: torch.Tensor,
+    targets: torch.Tensor,
+    *,
+    multilabel: bool | None = None,
+    num_classes: int | None = None,
+    n_resamples: int = 1000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> tuple[float, float, float]:
+    """Macro AUROC point estimate + bootstrap CI, matching the Strodthoff et al.
+    PTB-XL protocol (report e.g. ``0.928(05)`` = mean ± 0.005 half-width).
+
+    Resamples the N examples with replacement ``n_resamples`` times. Returns
+    ``(point, lo, hi)`` where [lo, hi] is the central ``ci`` interval; the
+    half-width is ``(hi - lo) / 2``.
+
+    - multi-label: scores/targets are [N, C] (targets in {0,1}).
+    - single-label: scores are [N, C] logits/probs, targets are [N] class ids
+      (set ``multilabel=False`` and pass ``num_classes``).
+    """
+    if multilabel is None:
+        multilabel = targets.dim() == 2
+
+    def macro(idx):
+        if multilabel:
+            return multilabel_auroc_macro(scores[idx], targets[idx])
+        return roc_auc_ovr_macro(scores[idx], targets[idx], num_classes or scores.shape[1])
+
+    n = scores.shape[0]
+    g = torch.Generator().manual_seed(seed)
+    point = macro(torch.arange(n))
+    samples = []
+    for _ in range(n_resamples):
+        idx = torch.randint(0, n, (n,), generator=g)
+        val = macro(idx)
+        if val == val:  # skip NaN (degenerate resample)
+            samples.append(val)
+    samples = sorted(samples)
+    lo_q = (1 - ci) / 2
+    hi_q = 1 - lo_q
+    lo = samples[max(0, int(lo_q * len(samples)))]
+    hi = samples[min(len(samples) - 1, int(hi_q * len(samples)))]
+    return point, lo, hi
+
+
 def multilabel_auroc_macro(scores: torch.Tensor, targets: torch.Tensor) -> float:
     """Macro AUROC for multi-label targets (PTB-XL all/diag/form/rhythm tasks).
 

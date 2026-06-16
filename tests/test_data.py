@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import torch
 from prism.data.audio import SyntheticMelPatchDataset
-from prism.data.ecg import _check_ecg_failure_rate
+from prism.data.ecg import _check_ecg_failure_rate, _fit_window
 from prism.data.image import patchify
 
 # ── ECG failure gate ──────────────────────────────────────────────────────────
@@ -29,6 +30,29 @@ def test_ecg_failure_gate_passes_under_threshold():
 def test_ecg_failure_gate_passes_on_zero_total():
     """Empty dataset should not raise (no divide-by-zero)."""
     _check_ecg_failure_rate([], 0)
+
+
+def test_fit_window_full_record_is_noop():
+    """The full 100 Hz record (1000 samples) must pass through unchanged."""
+    sig = np.random.randn(1000, 12).astype(np.float32)
+    out = _fit_window(sig, 1000)
+    assert out.shape == (1000, 12)
+    assert np.array_equal(out, sig)
+
+
+def test_fit_window_truncates_longer():
+    sig = np.random.randn(5000, 12).astype(np.float32)  # 500 Hz record
+    out = _fit_window(sig, 1000)
+    assert out.shape == (1000, 12)
+    assert np.array_equal(out, sig[:1000])
+
+
+def test_fit_window_right_pads_shorter():
+    sig = np.ones((600, 12), dtype=np.float32)
+    out = _fit_window(sig, 1000)
+    assert out.shape == (1000, 12)
+    assert np.array_equal(out[:600], sig)
+    assert np.all(out[600:] == 0.0)
 
 
 # ── Image ─────────────────────────────────────────────────────────────────────

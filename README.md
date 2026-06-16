@@ -180,6 +180,7 @@ ruff check prism tests scripts train.py
 | `s4d_init` / `--s4d-init` | `lin` | S4D-Lin (`A=-½+iπn`) or `legacy` |
 | `swa_window` / `--swa-window` | 128 | sliding-window attention span |
 | `compile` / `--compile` | off | `torch.compile` the model in the trainer |
+| `multilabel` / `--ecg-multilabel` | off | PTB-XL multi-label targets + BCE + macro-AUROC selection |
 
 ---
 

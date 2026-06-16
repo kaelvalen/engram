@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PRISM benchmark + ablation matrix (locked before running, per the paper plan).
 #
 # Reproduces every row of the paper tables. Datasets must be present under
@@ -21,8 +21,11 @@ COMMON="--hidden-dim 256 --num-layers 12 --num-heads 8 --amp $AMP --data-root $D
 
 run () {  # run <name> <seed> <extra-args...>
   local name="$1"; local seed="$2"; shift 2
-  echo ">>> [$name | seed=$seed] $*"
-  PYTHONHASHSEED="$seed" python train.py $COMMON --output-dir "$RESULTS/$name/seed$seed" "$@" \
+  # PTB-XL is evaluated multi-label (macro AUROC) per the paper protocol.
+  local extra=""
+  case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
+  echo ">>> [$name | seed=$seed] $* $extra"
+  PYTHONHASHSEED="$seed" prism-train $COMMON --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
 }
 

@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
+    if labels.dim() == 2:
+        # multi-label: label-wise accuracy at a 0.5 threshold (a training-progress
+        # proxy; the reported metric is macro AUROC via evaluate_multilabel_auc).
+        preds = (logits > 0).float()
+        return (preds == labels).float().mean().item()
     return (logits.argmax(dim=-1) == labels).float().mean().item()
 
 
@@ -107,6 +112,32 @@ def evaluate_macro_auc(
     logits = torch.cat(all_logits)
     labels = torch.cat(all_labels)
     return roc_auc_ovr_macro(logits, labels, num_classes)
+
+
+@torch.no_grad()
+def evaluate_multilabel_auc(
+    model: PRISMForClassification,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    modality: str,
+    *,
+    amp_dtype: torch.dtype | None = None,
+) -> float:
+    """Macro AUROC for multi-label targets ([N, C] multi-hot) — the PTB-XL
+    all/diag/super-diag/form/rhythm metric. Accumulates sigmoid scores + targets
+    across the loader and computes one macro AUROC.
+    """
+    from prism.training.metrics import multilabel_auroc_macro
+
+    model.train(False)
+    all_scores, all_targets = [], []
+    for x, labels in loader:
+        x = x.to(device)
+        with _autocast(device, amp_dtype):
+            out = model(x, modality=modality)
+        all_scores.append(torch.sigmoid(out["logits"].float()).cpu())
+        all_targets.append(labels.cpu())
+    return multilabel_auroc_macro(torch.cat(all_scores), torch.cat(all_targets))
 
 
 def cycle_loader(loader: torch.utils.data.DataLoader) -> Iterator:

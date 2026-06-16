@@ -21,6 +21,14 @@ PTB-XL is benchmarked with **macro one-vs-rest AUROC**, not accuracy
 `prism.training.loops.evaluate_macro_auc`. Target: match `xresnet1d101`
 (~0.928 macro AUC on 5-class super-diagnostic) within the ±0.005 bootstrap CI.
 
+**Use the full signal.** `--window-size` defaults to **1000** = the whole 10 s
+record at 100 Hz, matching what `xresnet1d101` consumes. Shorter windows (the old
+250/128 defaults) truncate to the first 1–2.5 s, discard most of the ECG, and
+systematically bias PRISM *down* relative to the baseline — an apples-to-oranges
+confound. Keep 1000 for any number quoted against the leaderboard (use 5000 at
+500 Hz). This costs ~4× the sequence length vs the old default, but PRISM is a
+linear-time model so it is O(T); correctness over speed here.
+
 ## Main table (architectures × modalities)
 
 Shared budget: `hidden_dim=256, num_layers=12, num_heads=8` (~8M params).
@@ -69,16 +77,26 @@ run 2 seeds for ablations.
 
 ## Honest gaps / TODO before submission
 
-- **All-6-tasks PTB-XL is not yet wired.** `prism/data/ecg.py` currently emits a
-  single-label 5-class super-diagnostic target (argmax). The full leaderboard
-  (`all/diag/sub-diag/super-diag/form/rhythm`) is **multi-label**; it needs a
-  multi-hot target loader feeding `metrics.multilabel_auroc_macro`
-  (`binary_auroc` already handles the per-class case). This is the first thing
-  to finish before claiming the full PTB-XL table.
-- **Bootstrap CIs** (1000-resample) on the test fold are not yet computed; add
-  them to match Strodthoff et al. Table I before quoting "within CI".
+- **All six PTB-XL task groups ARE wired** (`--ecg-task superdiag|subdiag|diag|
+  form|rhythm|all`): multi-hot targets in `prism/data/ecg.py` via the pure,
+  unit-tested `prism/data/ptbxl_tasks.py` mapping, BCEWithLogits in `model.py`,
+  accumulating macro AUROC in `loops.evaluate_multilabel_auc`, checkpoint
+  selection on `val_macro_auc`, and `num_classes` derived from the task vocab.
+  Each non-superdiag task is inherently multi-label. The mapping logic is tested
+  on a synthetic SCP table (`tests/test_ptbxl_tasks.py`); **validate the per-task
+  class counts against the real `scp_statements.csv` once the dataset is on disk**
+  (expected ≈ 5 / 23 / 44 / 19 / 12 / 71 classes for superdiag/subdiag/diag/form/
+  rhythm/all).
+- **Bootstrap CIs** are implemented (`metrics.bootstrap_auroc_ci`, 1000-resample,
+  matches Strodthoff Table I `0.928(05)` format). Run it on the **test** fold for
+  the final number; the in-training AUROC uses the val fold.
 - **FLA / mamba-ssm numbers** require a GPU; `tests/test_delta_equivalence.py`
-  must pass there before trusting `--delta-backend fla`.
+  must pass there before trusting `--delta-backend fla`. The `g` argument we pass
+  is the **per-step** log-decay (`g_t = log α_t`); the FLA op forms the cumulative
+  decays internally. This is the op-level (FLA 0.3.x) convention — the newer
+  *layer-level* GatedDeltaNet uses raw projection + A_log/dt_bias + in-kernel gate,
+  which is different. Confirm the equivalence test passes on the actual installed
+  FLA version before quoting "FLA-equivalent" in the paper.
 - **Joint single-set-of-weights training** (true "modality-agnostic") is the
   follow-up; the current matrix is "modality-portable" (same arch, separate
   runs). Be explicit about this in the paper.

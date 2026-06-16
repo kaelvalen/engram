@@ -33,6 +33,8 @@ KNOWN_KEYS = {
     "num_workers",
     "patch_size",
     "window_size",
+    "ecg_multilabel",
+    "ecg_task",
     "mel_bins",
     "patch_frames",
     "audio_num_classes",

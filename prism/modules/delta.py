@@ -237,10 +237,23 @@ class GatedDeltaRule(nn.Module):
     def _forward_fla(self, q, k, v, alpha, beta, S0):
         """FLA Triton chunk_gated_delta_rule path (GPU-only, production backend).
 
-        Maps our (alpha=forget gate, beta=write gate) to FLA's (g=log decay,
-        beta). q/k are already l2-normalised in `_project`, so we pass scale=1.
-        Numerical equivalence against `_recurrent_vectorized` is asserted (on
-        GPU, when FLA is importable) in tests/test_delta_equivalence.py.
+        Maps our (alpha = per-step forget gate ∈ (0,1), beta = write gate) to
+        FLA's op-level signature ``(q, k, v, g, beta, ...)``.
+
+        IMPORTANT — `g` is the **per-step log decay** g_t = log α_t (NOT the
+        cumulative sum): the op kernel forms the cumulative diagonal decays
+        internally (chunk_local_cumsum). This matches the op-level API of FLA
+        0.3.x (the version pinned in pyproject). Note the *layer-level*
+        GatedDeltaNet in newer FLA takes a raw projection plus A_log/dt_bias and
+        sets use_gate_in_kernel=True — a different, higher-level convention we do
+        not use here. Because the exact mapping is version-dependent, this path
+        is only trustworthy once tests/test_delta_equivalence.py passes on GPU;
+        that test is the gate, not this comment.
+
+        q/k are already l2-normalised in `_project`, so we pass scale=1.0 and do
+        NOT enable in-kernel l2-norm (avoid double normalisation); the op default
+        is no in-kernel norm. We keep the kwargs minimal so a signature change
+        triggers the caller's graceful fallback rather than a silent miscompute.
         """
         fn = _load_fla()
         if fn is None:

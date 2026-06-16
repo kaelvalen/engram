@@ -121,6 +121,12 @@ class PRISMForClassification(nn.Module):
         out = {"logits": logits, "states": new_states}
 
         if labels is not None:
-            out["loss"] = nn.functional.cross_entropy(logits, labels)
+            if mcfg.multilabel:
+                # multi-hot targets [B, num_classes]; BCEWithLogits over each class.
+                out["loss"] = nn.functional.binary_cross_entropy_with_logits(
+                    logits, labels.float()
+                )
+            else:
+                out["loss"] = nn.functional.cross_entropy(logits, labels)
 
         return out
