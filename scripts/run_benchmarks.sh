@@ -39,9 +39,13 @@ for SEED in $SEEDS; do
     run "prism_legacy_$MOD"   "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin      # S4D + Delta 3:1
   done
   # CNN / Transformer baselines (separate baseline trainer).
-  python scripts/train_baseline.py --model resnet1d   --task ecg --epochs "$EPOCHS" --seed "$SEED" \
+  # Use the same full-signal window and multi-label protocol as PRISM so the
+  # comparison is apples-to-apples.
+  python scripts/train_baseline.py --model resnet1d --task ecg --epochs "$EPOCHS" --seed "$SEED" \
+    --window-size 1000 --ecg-task superdiag --ecg-multilabel \
     --output-dir "$RESULTS/resnet1d_ecg/seed$SEED" 2>&1 | tee "$RESULTS/resnet1d_ecg_seed${SEED}.log"
   python scripts/train_baseline.py --model transformer --task ecg --epochs "$EPOCHS" --seed "$SEED" \
+    --window-size 1000 --ecg-task superdiag --ecg-multilabel \
     --output-dir "$RESULTS/transformer_ecg/seed$SEED" 2>&1 | tee "$RESULTS/transformer_ecg_seed${SEED}.log"
 
   # ---------------- Ablations (on PTB-XL super-diag, cheapest) ----------------

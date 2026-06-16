@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,6 +10,7 @@ from .ffn import SwiGLU
 from .norm import RMSNorm
 
 
+@functools.lru_cache(maxsize=8)
 def _build_rope_cache(seq_len: int, head_dim: int, device, base: float = 10000.0):
     """Standard rotary position embedding cos/sin caches: [T, head_dim]."""
     half = head_dim // 2
@@ -31,6 +34,15 @@ def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.
     return x * cos + _rotate_half(x) * sin
 
 
+@functools.lru_cache(maxsize=8)
+def _build_window_mask(T: int, window: int, device: torch.device) -> torch.Tensor:
+    i = torch.arange(T, device=device).unsqueeze(1)
+    j = torch.arange(T, device=device).unsqueeze(0)
+    allowed = (j <= i) & (j > i - window)
+    mask = torch.zeros(T, T, device=device)
+    return mask.masked_fill(~allowed, float("-inf"))
+
+
 class SlidingWindowAttention(nn.Module):
     """Causal multi-head attention restricted to a sliding window of `window`
     past tokens (incl. self). With RoPE. This is the attention component used
@@ -48,27 +60,11 @@ class SlidingWindowAttention(nn.Module):
         self.qkv = nn.Linear(hidden_dim, 3 * hidden_dim, bias=False)
         self.out_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
-        # Cache RoPE and the sliding-window mask per (T, device) to avoid
-        # rebuilding them on every forward pass.
-        self._rope_cache: dict[tuple[int, torch.device], tuple[torch.Tensor, torch.Tensor]] = {}
-        self._mask_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
-
     def _get_rope_cache(self, T: int, head_dim: int, device: torch.device):
-        key = (T, device)
-        if key not in self._rope_cache:
-            self._rope_cache[key] = _build_rope_cache(T, head_dim, device)
-        return self._rope_cache[key]
+        return _build_rope_cache(T, head_dim, device)
 
     def _get_window_mask(self, T: int, device: torch.device) -> torch.Tensor:
-        key = (T, device)
-        if key not in self._mask_cache:
-            i = torch.arange(T, device=device).unsqueeze(1)
-            j = torch.arange(T, device=device).unsqueeze(0)
-            allowed = (j <= i) & (j > i - self.window)
-            mask = torch.zeros(T, T, device=device)
-            mask = mask.masked_fill(~allowed, float("-inf"))
-            self._mask_cache[key] = mask
-        return self._mask_cache[key]
+        return _build_window_mask(T, self.window, device)
 
     def forward(self, x: torch.Tensor, state=None):
         # KV-cache streaming is not implemented; reject a non-None state to avoid

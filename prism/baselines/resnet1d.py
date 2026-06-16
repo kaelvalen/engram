@@ -44,5 +44,9 @@ class ResNet1DClassifier(nn.Module):
         logits = self.head(x)
         out: dict = {"logits": logits}
         if labels is not None:
-            out["loss"] = nn.functional.cross_entropy(logits, labels)
+            if labels.dim() == 2:
+                # multi-hot targets: macro-AUROC protocol for PTB-XL
+                out["loss"] = nn.functional.binary_cross_entropy_with_logits(logits, labels)
+            else:
+                out["loss"] = nn.functional.cross_entropy(logits, labels)
         return out

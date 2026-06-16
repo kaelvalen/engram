@@ -51,14 +51,20 @@ def _get_assoc_fn():
 
 
 def _hillis_steele_inplace(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Pure math Hillis-Steele scan; no autograd tracking."""
+    """Pure math Hillis-Steele scan; no autograd tracking.
+
+    Clones the shifted source slices once per level so the in-place writes do
+    not overlap with their own inputs, while avoiding the ``torch.cat``-based
+    doubling of the time dimension that blew up memory on long sequences.
+    """
     T = a.shape[-2]
     A = a.clone()
     B = b.clone()
     shift = 1
     while shift < T:
-        B[..., shift:, :] = A[..., shift:, :] * B[..., :-shift, :] + B[..., shift:, :]
-        A[..., shift:, :] = A[..., shift:, :] * A[..., :-shift, :]
+        # Update B before A so we still have the current A_cur available.
+        B[..., shift:, :] = A[..., shift:, :] * B[..., :-shift, :].clone() + B[..., shift:, :]
+        A[..., shift:, :] = A[..., shift:, :] * A[..., :-shift, :].clone()
         shift *= 2
     return B
 

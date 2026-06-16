@@ -212,7 +212,7 @@ def _worker_init_fn(worker_id: int, base_seed: int | None) -> None:
 def get_ecg_loaders(
     root: str,
     batch_size: int = 32,
-    window_size: int = 128,
+    window_size: int = 1000,
     num_workers: int = 4,
     multilabel: bool = False,
     task: str = "superdiag",

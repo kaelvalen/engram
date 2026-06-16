@@ -495,17 +495,31 @@ def main(argv: list[str] | None = None) -> None:
     def on_epoch(epoch: int, m: dict[str, float]) -> None:
         auc_msg = ""
         if use_auc:
-            from prism.training.loops import evaluate_macro_auc
+            # Any task other than the legacy single-label super-diagnostic is
+            # inherently multi-label; --ecg-multilabel can also force it.
+            ml = args.ecg_multilabel or args.ecg_task != "superdiag"
+            if ml:
+                from prism.training.loops import evaluate_multilabel_auc
 
-            num_classes = train_loader.dataset.num_classes
-            auc = evaluate_macro_auc(
-                model,
-                val_loader,
-                device,
-                modality,
-                num_classes,
-                amp_dtype=_resolve_amp(args.amp),
-            )
+                auc = evaluate_multilabel_auc(
+                    model,
+                    val_loader,
+                    device,
+                    modality,
+                    amp_dtype=_resolve_amp(args.amp),
+                )
+            else:
+                from prism.training.loops import evaluate_macro_auc
+
+                num_classes = train_loader.dataset.num_classes
+                auc = evaluate_macro_auc(
+                    model,
+                    val_loader,
+                    device,
+                    modality,
+                    num_classes,
+                    amp_dtype=_resolve_amp(args.amp),
+                )
             m["val_macro_auc"] = auc
             auc_msg = f" | val macro-AUC: {auc:.4f}"
         logger.info(
