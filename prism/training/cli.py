@@ -19,6 +19,7 @@ from prism.model import PRISMForClassification
 from prism.training.checkpoint import save_checkpoint
 from prism.training.loops import _autocast, cycle_loader, evaluate_epoch
 from prism.training.trainer import Trainer, TrainerConfig, _resolve_amp
+from prism.training.utils import set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
         num_heads=args.num_heads,
         num_layers=args.num_layers,
         delta_every=args.delta_every,
+        dropout=args.dropout,
         ssm_kind=args.ssm_kind,
         s4d_init=args.s4d_init,
         delta_backend=args.delta_backend,
@@ -48,9 +50,7 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
         kwargs["block_pattern"] = tokens
         kwargs["num_layers"] = len(tokens)
     else:
-        kwargs["force_block_type"] = (
-            None if args.block_pattern == "hybrid" else args.block_pattern
-        )
+        kwargs["force_block_type"] = None if args.block_pattern == "hybrid" else args.block_pattern
     return kwargs
 
 
@@ -90,6 +90,7 @@ def _build_loaders_single(
             num_workers=args.num_workers,
             multilabel=ml,
             task=args.ecg_task,
+            seed=args.seed,
         )
         # num_classes is task-dependent (5 for super-diag, more for diag/subdiag/…);
         # read it from the loaded vocabulary rather than hardcoding.
@@ -330,6 +331,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--num-layers", type=int, default=12)
     parser.add_argument("--delta-every", type=int, default=4)
+    parser.add_argument("--dropout", type=float, default=0.0, help="Dropout probability")
     parser.add_argument(
         "--block-pattern",
         type=str,
@@ -387,6 +389,12 @@ def main(argv: list[str] | None = None) -> None:
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic CUDA mode (slower, but more reproducible)",
+    )
     parser.add_argument(
         "--patch-size", type=int, default=4, help="CIFAR patch side (image / joint)"
     )
@@ -424,7 +432,15 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--wandb-project", type=str, default=None)
     parser.add_argument("--wandb-run-name", type=str, default=None)
-    parser.add_argument("--early-stopping", type=int, default=0, help="patience on val acc; 0=off")
+    parser.add_argument(
+        "--early-stopping", type=int, default=0, help="patience on val metric; 0=off"
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to a checkpoint to resume training from (e.g. output/last.pt)",
+    )
     parser.add_argument(
         "--amp",
         type=str,
@@ -440,6 +456,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     setup_logging(args.log_level)
+    set_seed(args.seed, deterministic=args.deterministic)
 
     device = torch.device(args.device)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -451,9 +468,9 @@ def main(argv: list[str] | None = None) -> None:
     train_loader, val_loader, modality, cfg = _build_loaders_single(args)
     model = PRISMForClassification(cfg).to(device)
 
-    multilabel_eval = modality == "ecg" and (
-        getattr(args, "ecg_multilabel", False) or getattr(args, "ecg_task", "superdiag") != "superdiag"
-    )
+    # PTB-XL primary metric is macro one-vs-rest AUROC for all tasks (including the
+    # legacy single-label super-diagnostic ablation). Non-ECG modalities use accuracy.
+    use_auc = modality == "ecg"
 
     tcfg = TrainerConfig(
         epochs=args.epochs,
@@ -465,17 +482,29 @@ def main(argv: list[str] | None = None) -> None:
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name or f"prism-{modality}",
         amp=args.amp,
-        select_metric="val_macro_auc" if multilabel_eval else "val_acc",
+        select_metric="val_macro_auc" if use_auc else "val_acc",
+        extra_wandb_config={
+            "seed": args.seed,
+            "batch_size": args.batch_size,
+            "modality": modality,
+            "ecg_task": args.ecg_task if modality == "ecg" else None,
+        },
     )
     trainer = Trainer(model, cfg, device=device, tcfg=tcfg)
 
     def on_epoch(epoch: int, m: dict[str, float]) -> None:
         auc_msg = ""
-        if multilabel_eval:
-            from prism.training.loops import evaluate_multilabel_auc
+        if use_auc:
+            from prism.training.loops import evaluate_macro_auc
 
-            auc = evaluate_multilabel_auc(
-                model, val_loader, device, modality, amp_dtype=_resolve_amp(args.amp)
+            num_classes = train_loader.dataset.num_classes
+            auc = evaluate_macro_auc(
+                model,
+                val_loader,
+                device,
+                modality,
+                num_classes,
+                amp_dtype=_resolve_amp(args.amp),
             )
             m["val_macro_auc"] = auc
             auc_msg = f" | val macro-AUC: {auc:.4f}"
@@ -505,6 +534,7 @@ def main(argv: list[str] | None = None) -> None:
         output_dir=args.output_dir,
         best_filename=f"best_{modality}.pt",
         epoch_callback=on_epoch,
+        resume_from=args.resume,
     )
     logger.info("Done.")
 

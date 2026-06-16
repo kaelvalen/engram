@@ -26,9 +26,7 @@ def binary_auroc(scores: torch.Tensor, positive: torch.Tensor) -> float | None:
     ranks = torch.empty_like(scores)
     ranks[order] = torch.arange(1, len(scores) + 1, dtype=scores.dtype)
     # resolve ties: assign the mean rank within each group of equal scores
-    uniq, inv, counts = torch.unique(
-        sorted_scores, return_inverse=True, return_counts=True
-    )
+    uniq, inv, counts = torch.unique(sorted_scores, return_inverse=True, return_counts=True)
     cum = torch.cumsum(counts, 0)
     start = cum - counts
     mean_rank = (start + cum + 1).float() / 2.0  # 1-indexed average rank per group

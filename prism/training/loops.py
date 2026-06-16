@@ -12,10 +12,15 @@ if TYPE_CHECKING:
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
+    if labels.dim() not in (1, 2):
+        raise ValueError(f"accuracy expects labels of dim 1 or 2, got {labels.dim()}")
+    if labels.numel() == 0:
+        raise ValueError("accuracy received empty labels")
     if labels.dim() == 2:
-        # multi-label: label-wise accuracy at a 0.5 threshold (a training-progress
-        # proxy; the reported metric is macro AUROC via evaluate_multilabel_auc).
-        preds = (logits > 0).float()
+        # multi-label: label-wise accuracy at a 0.5 probability threshold (a
+        # training-progress proxy; the reported metric is macro AUROC via
+        # evaluate_multilabel_auc).
+        preds = (logits.sigmoid() > 0.5).float()
         return (preds == labels).float().mean().item()
     return (logits.argmax(dim=-1) == labels).float().mean().item()
 
@@ -56,6 +61,8 @@ def train_epoch(
         if loss_log_fn is not None:
             loss_log_fn("train/loss_step", out["loss"].item(), step)
 
+    if n == 0:
+        raise ValueError("train_epoch received an empty loader")
     return total_loss / n, total_acc / n
 
 
@@ -81,6 +88,8 @@ def evaluate_epoch(
         total_acc += accuracy(out["logits"], labels) * B
         n += B
 
+    if n == 0:
+        raise ValueError("evaluate_epoch received an empty loader")
     return total_loss / n, total_acc / n
 
 

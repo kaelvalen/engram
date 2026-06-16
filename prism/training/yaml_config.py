@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
-from prism.config import ModalityConfig, PRISMConfig
+from prism.config import PRISMConfig
 
-KNOWN_KEYS = {
+# PRISMConfig fields that may appear in YAML (under the 'model' section or flat).
+_MODEL_KEYS = {f.name for f in fields(PRISMConfig)}
+# CLI-only keys that are valid in YAML but never become PRISMConfig fields.
+_CLI_ONLY_KEYS = {
     "modality",
     "mode",
     "epochs",
@@ -13,19 +17,6 @@ KNOWN_KEYS = {
     "lr",
     "weight_decay",
     "grad_clip",
-    "hidden_dim",
-    "num_heads",
-    "num_layers",
-    "delta_every",
-    "block_pattern",
-    "layer_pattern",
-    "ssm_kind",
-    "s4d_init",
-    "ssd_state_dim",
-    "delta_backend",
-    "scan_backend",
-    "swa_window",
-    "compile",
     "data_root",
     "output_dir",
     "log_level",
@@ -44,8 +35,13 @@ KNOWN_KEYS = {
     "wandb_run_name",
     "early_stopping",
     "amp",
+    "seed",
+    "deterministic",
+    "resume",
 }
-
+KNOWN_KEYS = _MODEL_KEYS | _CLI_ONLY_KEYS
+# `layer_pattern` is a CLI alias that is translated to `block_pattern` before the
+# config is built; it is intentionally NOT a PRISMConfig field.
 _TOP_LEVEL_ALLOWED = KNOWN_KEYS | {"train", "model", "modalities"}
 
 
@@ -69,14 +65,10 @@ def load_yaml_config(path: str | Path) -> dict[str, Any]:
         if unknown_train:
             raise ValueError(f"Unknown keys in 'train' section: {sorted(unknown_train)}")
 
+    model_section = raw.get("model", {})
+    if isinstance(model_section, dict):
+        unknown_model = set(model_section) - KNOWN_KEYS - {"modalities"}
+        if unknown_model:
+            raise ValueError(f"Unknown keys in 'model' section: {sorted(unknown_model)}")
+
     return raw
-
-
-def build_prism_config_from_mapping(data: dict[str, Any]) -> PRISMConfig:
-    d = dict(data)
-    modalities_raw = d.pop("modalities", None)
-    modalities: list[ModalityConfig] = []
-    if modalities_raw:
-        for m in modalities_raw:
-            modalities.append(ModalityConfig(**m))
-    return PRISMConfig(**d, modalities=modalities)
