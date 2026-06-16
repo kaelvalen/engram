@@ -12,20 +12,55 @@ from prism.data.ptbxl_tasks import (
 
 # Synthetic scp_statements.csv view: a few statements spanning diag/form/rhythm.
 SCP = {
-    "NORM": {"diagnostic": 1, "form": 0, "rhythm": 0,
-             "diagnostic_subclass": "NORM", "diagnostic_class": "NORM"},
-    "IMI":  {"diagnostic": 1, "form": 0, "rhythm": 0,
-             "diagnostic_subclass": "IMI", "diagnostic_class": "MI"},
-    "AMI":  {"diagnostic": 1, "form": 0, "rhythm": 0,
-             "diagnostic_subclass": "AMI", "diagnostic_class": "MI"},
-    "NDT":  {"diagnostic": 1, "form": 0, "rhythm": 0,
-             "diagnostic_subclass": "STTC", "diagnostic_class": "STTC"},
-    "ABQRS": {"diagnostic": 0, "form": 1, "rhythm": 0,
-              "diagnostic_subclass": float("nan"), "diagnostic_class": float("nan")},
-    "SR":   {"diagnostic": 0, "form": 0, "rhythm": 1,
-             "diagnostic_subclass": float("nan"), "diagnostic_class": float("nan")},
-    "AFIB": {"diagnostic": 0, "form": 0, "rhythm": 1,
-             "diagnostic_subclass": float("nan"), "diagnostic_class": float("nan")},
+    "NORM": {
+        "diagnostic": 1,
+        "form": 0,
+        "rhythm": 0,
+        "diagnostic_subclass": "NORM",
+        "diagnostic_class": "NORM",
+    },
+    "IMI": {
+        "diagnostic": 1,
+        "form": 0,
+        "rhythm": 0,
+        "diagnostic_subclass": "IMI",
+        "diagnostic_class": "MI",
+    },
+    "AMI": {
+        "diagnostic": 1,
+        "form": 0,
+        "rhythm": 0,
+        "diagnostic_subclass": "AMI",
+        "diagnostic_class": "MI",
+    },
+    "NDT": {
+        "diagnostic": 1,
+        "form": 0,
+        "rhythm": 0,
+        "diagnostic_subclass": "STTC",
+        "diagnostic_class": "STTC",
+    },
+    "ABQRS": {
+        "diagnostic": 0,
+        "form": 1,
+        "rhythm": 0,
+        "diagnostic_subclass": float("nan"),
+        "diagnostic_class": float("nan"),
+    },
+    "SR": {
+        "diagnostic": 0,
+        "form": 0,
+        "rhythm": 1,
+        "diagnostic_subclass": float("nan"),
+        "diagnostic_class": float("nan"),
+    },
+    "AFIB": {
+        "diagnostic": 0,
+        "form": 0,
+        "rhythm": 1,
+        "diagnostic_subclass": float("nan"),
+        "diagnostic_class": float("nan"),
+    },
 }
 
 

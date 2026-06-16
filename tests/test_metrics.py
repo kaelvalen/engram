@@ -34,9 +34,7 @@ def test_invariant_to_monotonic_score_shift():
 
 def test_ovr_macro_perfect():
     # logits that perfectly rank each class highest for its own samples
-    logits = torch.tensor(
-        [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0], [4.0, 0.0, 0.0]]
-    )
+    logits = torch.tensor([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0], [4.0, 0.0, 0.0]])
     labels = torch.tensor([0, 1, 2, 0])
     assert roc_auc_ovr_macro(logits, labels, 3) == 1.0
 

@@ -54,9 +54,7 @@ def test_dispatcher_backends_agree():
     a, b = _inputs(T=20)
     ref = seq_recurrence(a, b)
     for backend in ("auto", "assoc", "reference"):
-        torch.testing.assert_close(
-            linear_recurrence(a, b, backend), ref, rtol=1e-4, atol=1e-5
-        )
+        torch.testing.assert_close(linear_recurrence(a, b, backend), ref, rtol=1e-4, atol=1e-5)
 
 
 def test_unknown_backend_raises():
