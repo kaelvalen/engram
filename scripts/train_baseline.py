@@ -12,6 +12,7 @@ import torch.nn as nn
 from prism.baselines import ResNet1DClassifier, TransformerSequenceClassifier
 from prism.data.paths import resolve_ptbxl_root
 from prism.training.loops import accuracy
+from prism.training.utils import set_seed
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
@@ -92,8 +93,10 @@ def main() -> None:
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
     )
     parser.add_argument("--output-dir", type=str, default="./output/baselines")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     args = parser.parse_args()
 
+    set_seed(args.seed)
     device = torch.device(args.device)
     os.makedirs(args.output_dir, exist_ok=True)
 

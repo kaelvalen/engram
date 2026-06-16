@@ -25,7 +25,7 @@ run () {  # run <name> <seed> <extra-args...>
   local extra=""
   case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
   echo ">>> [$name | seed=$seed] $* $extra"
-  PYTHONHASHSEED="$seed" prism-train $COMMON --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
+  PYTHONHASHSEED="$seed" prism-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
 }
 
@@ -39,9 +39,9 @@ for SEED in $SEEDS; do
     run "prism_legacy_$MOD"   "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin      # S4D + Delta 3:1
   done
   # CNN / Transformer baselines (separate baseline trainer).
-  python scripts/train_baseline.py --model resnet1d   --task ecg --epochs "$EPOCHS" \
+  python scripts/train_baseline.py --model resnet1d   --task ecg --epochs "$EPOCHS" --seed "$SEED" \
     --output-dir "$RESULTS/resnet1d_ecg/seed$SEED" 2>&1 | tee "$RESULTS/resnet1d_ecg_seed${SEED}.log"
-  python scripts/train_baseline.py --model transformer --task ecg --epochs "$EPOCHS" \
+  python scripts/train_baseline.py --model transformer --task ecg --epochs "$EPOCHS" --seed "$SEED" \
     --output-dir "$RESULTS/transformer_ecg/seed$SEED" 2>&1 | tee "$RESULTS/transformer_ecg_seed${SEED}.log"
 
   # ---------------- Ablations (on PTB-XL super-diag, cheapest) ----------------

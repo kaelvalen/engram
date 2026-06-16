@@ -79,10 +79,12 @@ def main():
 
     print(f"device={args.device}  torch={torch.__version__}")
     for N in (16, 64, 128):  # sweep state dim / head dim regimes
-        bench_ssd(args.device, args.batch, args.seq_len, args.dim, args.heads, N,
-                  args.iters, args.warmup)
-    bench_delta(args.device, args.batch, args.seq_len, args.dim, args.heads,
-                args.iters, args.warmup)
+        bench_ssd(
+            args.device, args.batch, args.seq_len, args.dim, args.heads, N, args.iters, args.warmup
+        )
+    bench_delta(
+        args.device, args.batch, args.seq_len, args.dim, args.heads, args.iters, args.warmup
+    )
 
 
 if __name__ == "__main__":
