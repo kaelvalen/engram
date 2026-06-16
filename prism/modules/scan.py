@@ -25,7 +25,11 @@ that anti-pattern; the production path prefers ``torch.associative_scan``.
 
 from __future__ import annotations
 
+import logging
+
 import torch
+
+logger = logging.getLogger(__name__)
 
 # Cache whether torch exposes a usable associative_scan HOP.
 _ASSOC_FN = None
@@ -72,9 +76,12 @@ def hillis_steele_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         # The leading `shift` rows must act as the identity element (decay=1,
         # input=0) so the combine is a no-op there. Built with cat so it works
         # for real and complex dtypes alike (F.pad's constant value is real-only).
-        lead_shape = (*A.shape[:-2], shift, A.shape[-1])
-        ones = torch.ones(lead_shape, dtype=A.dtype, device=A.device)
-        zeros = torch.zeros(lead_shape, dtype=B.dtype, device=B.device)
+        # A and B may have different trailing dims (e.g. decay is broadcast over
+        # the state dimension), so pad each to its own width.
+        a_lead_shape = (*A.shape[:-2], shift, A.shape[-1])
+        b_lead_shape = (*B.shape[:-2], shift, B.shape[-1])
+        ones = torch.ones(a_lead_shape, dtype=A.dtype, device=A.device)
+        zeros = torch.zeros(b_lead_shape, dtype=B.dtype, device=B.device)
         A_prev = torch.cat([ones, A], dim=-2)[..., :T, :]
         B_prev = torch.cat([zeros, B], dim=-2)[..., :T, :]
         # combine(prev, cur):  A_new = A_cur·A_prev ,  B_new = A_cur·B_prev + B_cur
@@ -105,13 +112,16 @@ def assoc_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     try:
         _, h = fn(combine, (a, b), dim=scan_dim, combine_mode="generic")
         return h
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "torch.associative_scan failed (%s: %s); falling back to Hillis-Steele.",
+            type(exc).__name__,
+            exc,
+        )
         return hillis_steele_recurrence(a, b)
 
 
-def linear_recurrence(
-    a: torch.Tensor, b: torch.Tensor, backend: str = "auto"
-) -> torch.Tensor:
+def linear_recurrence(a: torch.Tensor, b: torch.Tensor, backend: str = "auto") -> torch.Tensor:
     """Dispatch to the requested scan backend.
 
     backend: "auto" (assoc if available else reference), "assoc", "reference".

@@ -20,47 +20,43 @@ class BlockState:
 
 
 def build_block(layer_type: str, cfg) -> nn.Module:
-    """Config'e göre blok üret. 's4' rolü ssm_kind'e göre SSD veya S4D olur."""
+    """Build a block from config. The 's4' role resolves to SSD or S4D based on ssm_kind."""
+    common = dict(
+        hidden_dim=cfg.hidden_dim,
+        num_heads=cfg.num_heads,
+        conv_kernel_size=cfg.conv_kernel_size,
+        ffn_expand=cfg.ffn_expand,
+        dropout=cfg.dropout,
+    )
     if layer_type == "s4":
         if cfg.ssm_kind == "ssd":
             return SSDBlock(
-                hidden_dim=cfg.hidden_dim,
-                num_heads=cfg.num_heads,
+                **common,
                 state_dim=cfg.ssd_state_dim,
                 dt_min=cfg.s4_dt_min,
                 dt_max=cfg.s4_dt_max,
-                conv_kernel_size=cfg.conv_kernel_size,
-                ffn_expand=cfg.ffn_expand,
                 scan_backend=cfg.scan_backend,
             )
         return S4Block(
-            hidden_dim=cfg.hidden_dim,
-            num_heads=cfg.num_heads,
+            **common,
             state_mult=cfg.s4_state_mult,
             dt_min=cfg.s4_dt_min,
             dt_max=cfg.s4_dt_max,
-            conv_kernel_size=cfg.conv_kernel_size,
-            ffn_expand=cfg.ffn_expand,
             init=cfg.s4d_init,
             scan_backend=cfg.scan_backend,
         )
     elif layer_type == "delta":
         return DeltaBlock(
-            hidden_dim=cfg.hidden_dim,
-            num_heads=cfg.num_heads,
+            **common,
             qk_norm=cfg.qk_norm,
             chunk_size=cfg.delta_chunk_size,
             gate_bias_init=cfg.gate_bias_init,
-            conv_kernel_size=cfg.conv_kernel_size,
-            ffn_expand=cfg.ffn_expand,
             backend=cfg.delta_backend,
         )
     elif layer_type == "swa":
         return SWABlock(
-            hidden_dim=cfg.hidden_dim,
-            num_heads=cfg.num_heads,
+            **common,
             window=cfg.swa_window,
-            ffn_expand=cfg.ffn_expand,
         )
     else:
         raise ValueError(f"Unknown layer type: {layer_type}")

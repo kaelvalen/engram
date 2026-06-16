@@ -68,9 +68,7 @@ class S4SSM(nn.Module):
             A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1).float()
         else:
             A_log = (
-                torch.linspace(math.log(1), math.log(state_mult * Dh), N)
-                .unsqueeze(0)
-                .repeat(H, 1)
+                torch.linspace(math.log(1), math.log(state_mult * Dh), N).unsqueeze(0).repeat(H, 1)
             )
             A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1)
         self.A_log = nn.Parameter(A_log)
@@ -210,6 +208,7 @@ class S4Block(nn.Module):
         ffn_expand: int = 2,
         init: str = "lin",
         scan_backend: str = "reference",
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
@@ -217,6 +216,8 @@ class S4Block(nn.Module):
         self.ssm = S4SSM(hidden_dim, num_heads, state_mult, dt_min, dt_max, init, scan_backend)
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
+        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        self.ffn_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
     def forward(
         self,
@@ -228,6 +229,6 @@ class S4Block(nn.Module):
         x_n = self.norm1(x)
         x_c, new_conv_state = self.conv(x_n, conv_state)
         x_s, new_ssm_state = self.ssm(x_c, ssm_state)
-        x = r + x_s
-        x = x + self.ffn(self.norm2(x))
+        x = r + self.dropout(x_s)
+        x = x + self.ffn_dropout(self.ffn(self.norm2(x)))
         return x, new_conv_state, new_ssm_state

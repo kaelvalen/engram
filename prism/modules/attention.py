@@ -48,18 +48,36 @@ class SlidingWindowAttention(nn.Module):
         self.qkv = nn.Linear(hidden_dim, 3 * hidden_dim, bias=False)
         self.out_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
-    def _window_mask(self, T: int, device) -> torch.Tensor:
-        """Additive mask [T, T]: 0 where attendable, -inf otherwise."""
-        i = torch.arange(T, device=device).unsqueeze(1)
-        j = torch.arange(T, device=device).unsqueeze(0)
-        allowed = (j <= i) & (j > i - self.window)
-        mask = torch.zeros(T, T, device=device)
-        mask = mask.masked_fill(~allowed, float("-inf"))
-        return mask
+        # Cache RoPE and the sliding-window mask per (T, device) to avoid
+        # rebuilding them on every forward pass.
+        self._rope_cache: dict[tuple[int, torch.device], tuple[torch.Tensor, torch.Tensor]] = {}
+        self._mask_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
+
+    def _get_rope_cache(self, T: int, head_dim: int, device: torch.device):
+        key = (T, device)
+        if key not in self._rope_cache:
+            self._rope_cache[key] = _build_rope_cache(T, head_dim, device)
+        return self._rope_cache[key]
+
+    def _get_window_mask(self, T: int, device: torch.device) -> torch.Tensor:
+        key = (T, device)
+        if key not in self._mask_cache:
+            i = torch.arange(T, device=device).unsqueeze(1)
+            j = torch.arange(T, device=device).unsqueeze(0)
+            allowed = (j <= i) & (j > i - self.window)
+            mask = torch.zeros(T, T, device=device)
+            mask = mask.masked_fill(~allowed, float("-inf"))
+            self._mask_cache[key] = mask
+        return self._mask_cache[key]
 
     def forward(self, x: torch.Tensor, state=None):
-        # state is accepted for interface symmetry (KV-cache) but the
-        # classification path always runs full-sequence; we pass it through.
+        # KV-cache streaming is not implemented; reject a non-None state to avoid
+        # silent correctness bugs in streaming use cases.
+        if state is not None:
+            raise NotImplementedError(
+                "SlidingWindowAttention does not yet support a KV-cache state. "
+                "Pass state=None for full-sequence classification."
+            )
         B, T, _ = x.shape
         H, Dh = self.num_heads, self.head_dim
         q, k, v = self.qkv(x).split(self.hidden_dim, dim=-1)
@@ -67,7 +85,7 @@ class SlidingWindowAttention(nn.Module):
         k = k.view(B, T, H, Dh).transpose(1, 2)
         v = v.view(B, T, H, Dh).transpose(1, 2)
 
-        cos, sin = _build_rope_cache(T, Dh, x.device)
+        cos, sin = self._get_rope_cache(T, Dh, x.device)
         cos, sin = cos.to(q.dtype), sin.to(q.dtype)
         q = _apply_rope(q, cos, sin)
         k = _apply_rope(k, cos, sin)
@@ -75,7 +93,7 @@ class SlidingWindowAttention(nn.Module):
         if T == 1:
             attn_mask = None  # single query attends to itself only
         else:
-            attn_mask = self._window_mask(T, x.device).to(q.dtype)
+            attn_mask = self._get_window_mask(T, x.device).to(q.dtype)
         o = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
         return self.out_proj(o), state
@@ -94,6 +112,7 @@ class SWABlock(nn.Module):
         num_heads: int,
         window: int = 128,
         ffn_expand: int = 2,
+        dropout: float = 0.0,
         **_unused,
     ):
         super().__init__()
@@ -101,11 +120,13 @@ class SWABlock(nn.Module):
         self.attn = SlidingWindowAttention(hidden_dim, num_heads, window)
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
+        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        self.ffn_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
     def forward(self, x: torch.Tensor, conv_state=None, mixer_state=None):
         r = x
         x_a, new_mixer = self.attn(self.norm1(x), mixer_state)
-        x = r + x_a
-        x = x + self.ffn(self.norm2(x))
+        x = r + self.dropout(x_a)
+        x = x + self.ffn_dropout(self.ffn(self.norm2(x)))
         # conv_state passes through unchanged (attention has no conv).
         return x, conv_state, new_mixer

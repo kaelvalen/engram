@@ -257,7 +257,7 @@ class GatedDeltaRule(nn.Module):
         """
         fn = _load_fla()
         if fn is None:
-            raise RuntimeError("FLA not available")
+            raise ImportError("FLA not available")
         # [B,H,T,Dh] → [B,T,H,Dh]; alpha,beta [B,H,T] → [B,T,H]
         qf = q.transpose(1, 2).contiguous()
         kf = k.transpose(1, 2).contiguous()
@@ -265,7 +265,11 @@ class GatedDeltaRule(nn.Module):
         g = torch.log(alpha.transpose(1, 2).clamp(min=1e-12)).contiguous()
         bf = beta.transpose(1, 2).contiguous()
         o, S_new = fn(
-            qf, kf, vf, g, bf,
+            qf,
+            kf,
+            vf,
+            g,
+            bf,
             scale=1.0,
             initial_state=S0,
             output_final_state=True,
@@ -302,14 +306,21 @@ class GatedDeltaRule(nn.Module):
         elif self.backend == "fla":
             try:
                 o, S_new = self._forward_fla(q, k, v, alpha, beta, S0)
-            except Exception as e:  # graceful fallback: never crash on missing kernel
+            except ImportError as e:
+                # FLA is not installed; graceful fallback to the reference backend.
                 if not _FLA_WARNED:
                     logger.warning(
                         "FLA delta backend unavailable (%s); falling back to the "
-                        "reference chunked implementation.", e,
+                        "reference chunked implementation.",
+                        e,
                     )
                     _FLA_WARNED = True
                 o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
+            except RuntimeError as e:
+                # CUDA OOM or kernel signature mismatch: surface loudly rather than
+                # silently switching backends.
+                logger.error("FLA delta backend failed at runtime: %s", e)
+                raise
         else:
             o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
 
@@ -332,6 +343,7 @@ class DeltaBlock(nn.Module):
         conv_kernel_size: int = 4,
         ffn_expand: int = 2,
         backend: str = "reference",
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
@@ -341,6 +353,8 @@ class DeltaBlock(nn.Module):
         )
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
+        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        self.ffn_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
     def forward(
         self,
@@ -352,6 +366,6 @@ class DeltaBlock(nn.Module):
         x_n = self.norm1(x)
         x_c, new_conv_state = self.conv(x_n, conv_state)
         x_d, new_delta_state = self.delta(x_c, delta_state)
-        x = r + x_d
-        x = x + self.ffn(self.norm2(x))
+        x = r + self.dropout(x_d)
+        x = x + self.ffn_dropout(self.ffn(self.norm2(x)))
         return x, new_conv_state, new_delta_state

@@ -49,6 +49,10 @@ class SSDMixer(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads  # P
         self.state_dim = state_dim  # N
+        if scan_backend not in ("auto", "assoc", "reference"):
+            raise ValueError(
+                f"scan_backend must be 'auto', 'assoc', or 'reference', got {scan_backend!r}"
+            )
         self.scan_backend = scan_backend
 
         H, P, N = num_heads, self.head_dim, state_dim
@@ -79,8 +83,12 @@ class SSDMixer(nn.Module):
 
     def empty_state(self, batch_size: int, device, dtype) -> torch.Tensor:
         return torch.zeros(
-            batch_size, self.num_heads, self.head_dim, self.state_dim,
-            device=device, dtype=torch.float32,
+            batch_size,
+            self.num_heads,
+            self.head_dim,
+            self.state_dim,
+            device=device,
+            dtype=torch.float32,
         )
 
     def _project(self, x: torch.Tensor):
@@ -124,9 +132,15 @@ class SSDMixer(nn.Module):
 
         xv, Cc, a, dBx = self._project(x)  # dBx: [B,T,H,P,N], a: [B,T,H]
 
-        # Arrange for the scan: flatten (B,H,P) as the batch, scan over T, N as channel.
-        a_scan = a.permute(0, 2, 1).reshape(B * H, 1, T, 1).expand(B * H, P, T, N)
-        a_scan = _acc(a_scan.reshape(B * H * P, T, N))
+        # Arrange for the scan: flatten (B,H,P) as the batch, scan over T.
+        # The decay `a` is identical across all N channels (and all P channels),
+        # so keep it as [B*H*P, T, 1] and rely on broadcasting inside the scan.
+        a_scan = _acc(
+            a.permute(0, 2, 1)
+            .reshape(B * H, 1, T, 1)
+            .expand(B * H, P, T, 1)
+            .reshape(B * H * P, T, 1)
+        )
         b_scan = _acc(dBx.permute(0, 2, 3, 1, 4).reshape(B * H * P, T, N))
 
         # Fold initial state into the first timestep's input.
@@ -152,8 +166,12 @@ class SSDMixer(nn.Module):
         H, P, N = self.num_heads, self.head_dim, self.state_dim
         h0 = _acc(state) if state is not None else self.empty_state(B, x.device, x.dtype)
         xv, Cc, a, dBx = self._project(x)
-        a_scan = a.permute(0, 2, 1).reshape(B * H, 1, T, 1).expand(B * H, P, T, N)
-        a_scan = _acc(a_scan.reshape(B * H * P, T, N))
+        a_scan = _acc(
+            a.permute(0, 2, 1)
+            .reshape(B * H, 1, T, 1)
+            .expand(B * H, P, T, 1)
+            .reshape(B * H * P, T, 1)
+        )
         b_scan = _acc(dBx.permute(0, 2, 3, 1, 4).reshape(B * H * P, T, N))
         if state is not None:
             b_scan = b_scan.clone()
@@ -178,6 +196,7 @@ class SSDBlock(nn.Module):
         conv_kernel_size: int = 4,
         ffn_expand: int = 2,
         scan_backend: str = "auto",
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
@@ -185,6 +204,8 @@ class SSDBlock(nn.Module):
         self.ssm = SSDMixer(hidden_dim, num_heads, state_dim, dt_min, dt_max, scan_backend)
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)
+        self.dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
+        self.ffn_dropout = nn.Dropout(dropout) if dropout > 0.0 else nn.Identity()
 
     def forward(
         self,
@@ -196,6 +217,6 @@ class SSDBlock(nn.Module):
         x_n = self.norm1(x)
         x_c, new_conv_state = self.conv(x_n, conv_state)
         x_s, new_ssm_state = self.ssm(x_c, ssm_state)
-        x = r + x_s
-        x = x + self.ffn(self.norm2(x))
+        x = r + self.dropout(x_s)
+        x = x + self.ffn_dropout(self.ffn(self.norm2(x)))
         return x, new_conv_state, new_ssm_state
