@@ -1,0 +1,17 @@
+# Enforce LF line endings for Python files.
+*.py text eol=lf
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+
+# Treat binary artifacts as binary for diffs.
+*.pt binary
+*.pth binary
+*.ckpt binary
+*.npy binary
+*.npz binary
+*.png binary
+*.jpg binary
+*.jpeg binary

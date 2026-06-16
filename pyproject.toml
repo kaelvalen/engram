@@ -54,6 +54,8 @@ Homepage = "https://github.com/kaelvalen/prism"
 
 [project.scripts]
 prism-train = "prism.training.cli:main"
+prism-infer-ecg = "scripts.infer_ecg:main"
+prism-infer-image = "scripts.infer_image:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
