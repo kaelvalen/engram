@@ -24,6 +24,11 @@
         # PyPI wheel that ends up overriding it anyway, and makes it practical
         # to track fast-moving packages such as flash-linear-attention.
         cudaToolkit = pkgs.cudaPackages.cudatoolkit;
+
+        # PyPI wheel'leri (özellikle PyTorch) kendi libstdc++'sını getirmez.
+        # Nix store'daki GCC runtime kütüphanelerini PATH'a eklemek, wheel
+        # içindeki native extension'ların çalışması için gerekli.
+        gccLib = pkgs.stdenv.cc.cc.lib;
       in
       {
         devShells.default = pkgs.mkShell {
@@ -52,9 +57,9 @@
             # version may not match the currently loaded kernel driver
             # (critical for Blackwell/sm_120 and similar new hardware).
             if [ -d /run/opengl-driver/lib ]; then
-              export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${cudaToolkit}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${cudaToolkit}/lib:${gccLib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             else
-              export LD_LIBRARY_PATH="${cudaToolkit}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${cudaToolkit}/lib:${gccLib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             fi
 
             VENV_DIR="$PWD/.venv"
