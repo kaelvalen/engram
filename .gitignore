@@ -103,3 +103,4 @@ Thumbs.db
 *python.tar.gz
 *.whl
 uv.lock
+.direnv/

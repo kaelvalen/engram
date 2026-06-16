@@ -258,6 +258,10 @@ class GatedDeltaRule(nn.Module):
         fn = _load_fla()
         if fn is None:
             raise ImportError("FLA not available")
+        if not q.is_cuda:
+            raise ImportError("FLA delta backend requires CUDA tensors")
+        if q.dtype == torch.float32:
+            raise ValueError("FLA delta backend does not support float32; use bfloat16/float16")
         # [B,H,T,Dh] → [B,T,H,Dh]; alpha,beta [B,H,T] → [B,T,H]
         qf = q.transpose(1, 2).contiguous()
         kf = k.transpose(1, 2).contiguous()
@@ -306,8 +310,10 @@ class GatedDeltaRule(nn.Module):
         elif self.backend == "fla":
             try:
                 o, S_new = self._forward_fla(q, k, v, alpha, beta, S0)
-            except ImportError as e:
-                # FLA is not installed; graceful fallback to the reference backend.
+            except (ImportError, ValueError, AssertionError, AttributeError) as e:
+                # FLA is not installed, not on CUDA, unsupported dtype, or an
+                # internal kernel assertion/attribute mismatch; graceful fallback
+                # to the reference chunked implementation.
                 if not _FLA_WARNED:
                     logger.warning(
                         "FLA delta backend unavailable (%s); falling back to the "
