@@ -17,50 +17,20 @@
           };
         };
 
-        python = pkgs.python312;
-
-        # Nix-packaged Python dependencies.  PyTorch is built with CUDA support
-        # because we enabled config.cudaSupport above.
-        pythonDeps = ps: with ps; [
-          torch
-          torchvision
-          torchaudio
-          tensorboard
-          pyyaml
-          pandas
-          pytest
-          hypothesis
-          scikit-learn
-          ruff
-        ];
-
-        pythonEnv = python.withPackages pythonDeps;
-
-        # CUDA toolkit used for nvcc and lib paths.  Keep it in sync with the
-        # PyTorch CUDA major version when possible.
+        # CUDA toolkit for nvcc and compilation headers.  We intentionally do
+        # NOT ship PyTorch from nixpkgs here: the project pins its Python deps
+        # via pyproject.toml and installs them with uv inside the dev venv.
+        # This avoids duplicating a huge nixpkgs CUDA PyTorch build with a
+        # PyPI wheel that ends up overriding it anyway, and makes it practical
+        # to track fast-moving packages such as flash-linear-attention.
         cudaToolkit = pkgs.cudaPackages.cudatoolkit;
       in
       {
-        packages.default = python.pkgs.buildPythonApplication {
-          pname = "prism";
-          version = "0.1.0";
-          pyproject = true;
-          src = ./.;
-          build-system = [ python.pkgs.setuptools ];
-          propagatedBuildInputs = (pythonDeps python.pkgs) ++ [
-            python.pkgs.setuptools
-          ];
-          meta = {
-            description = "PRISM — modality-portable hybrid linear-recurrent backbone";
-            license = pkgs.lib.licenses.mit;
-          };
-        };
-
         devShells.default = pkgs.mkShell {
           name = "prism-dev";
 
           buildInputs = with pkgs; [
-            pythonEnv
+            uv
             cudaToolkit
             git
             just
@@ -75,31 +45,50 @@
 
           shellHook = ''
             export PATH="${cudaToolkit}/bin:$PATH"
-            export LD_LIBRARY_PATH="${cudaToolkit}/lib:${pkgs.linuxPackages.nvidia_x11}/lib:$LD_LIBRARY_PATH"
-            export EXTRA_LDFLAGS="-L/lib -L${cudaToolkit}/lib"
-            export EXTRA_CCFLAGS="-I/usr/include"
+
+            # Use the running system's NVIDIA driver libs when on NixOS,
+            # otherwise fall back to the Nix-provided CUDA toolkit libs.
+            # This avoids hard-coding pkgs.linuxPackages.nvidia_x11, whose
+            # version may not match the currently loaded kernel driver
+            # (critical for Blackwell/sm_120 and similar new hardware).
+            if [ -d /run/opengl-driver/lib ]; then
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${cudaToolkit}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            else
+              export LD_LIBRARY_PATH="${cudaToolkit}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            fi
 
             VENV_DIR="$PWD/.venv"
+            PYTHON_BIN="${pkgs.python312}/bin/python3.12"
+
             if [ ! -d "$VENV_DIR" ]; then
-              echo "Creating Python virtual environment in $VENV_DIR ..."
-              ${python}/bin/python -m venv "$VENV_DIR"
+              echo "Creating uv virtual environment in $VENV_DIR ..."
+              uv venv --python "$PYTHON_BIN" "$VENV_DIR"
             fi
+
             source "$VENV_DIR/bin/activate"
 
-            # Ensure the project itself is installed in editable mode, including
-            # the optional GPU kernels if they are available on the current platform.
-            if ! python -c "import prism" 2>/dev/null; then
-              echo "Installing PRISM in editable mode ..."
-              pip install -e ".[train,test,dev]"
-              # GPU kernels are optional; FLA is the most important production backend.
-              pip install "flash-linear-attention>=0.3.2,<0.4" || true
+            # Keep the dev environment in sync with pyproject.toml.  uv is
+            # incremental, so repeated shell entries are cheap.
+            echo "Syncing PRISM dependencies ..."
+            uv pip install -e ".[train,test,dev]"
+
+            # flash-linear-attention is an optional production backend.  Its
+            # Triton kernels are sensitive to driver/toolkit versions, so a
+            # failure here is reported but does not block the shell.
+            if ! uv pip install "flash-linear-attention>=0.3.2,<0.4"; then
+              echo ""
+              echo "WARNING: flash-linear-attention could not be installed."
+              echo "         PRISM will fall back to pure-PyTorch reference paths."
             fi
 
             echo ""
             echo "PRISM dev shell ready."
             echo "  Python: $(python --version)"
-            echo "  CUDA:   $(nvcc --version | sed -n '2p' | xargs)"
-            python -c "import torch; print(f'  PyTorch: {torch.__version__}  CUDA available: {torch.cuda.is_available()}')"
+            echo "  uv: $(uv --version)"
+            if command -v nvcc >/dev/null 2>&1; then
+              echo "  CUDA: $(nvcc --version | sed -n '2p' | xargs)"
+            fi
+            python -c "import torch; print(f'  PyTorch: {torch.__version__}  CUDA available: {torch.cuda.is_available()}')" || true
           '';
         };
       });
