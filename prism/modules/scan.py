@@ -11,16 +11,17 @@ The combination operator on (decay, input) pairs is associative:
 
 Three backends are provided:
 
-* :func:`seq_recurrence`        — sequential ground truth (Python loop).
-* :func:`hillis_steele_recurrence` — fully vectorized, no indexed assignment.
+* :func:`seq_recurrence`        — sequential reference (Python loop).
+* :func:`hillis_steele_recurrence` — fully vectorized recursive doubling.
 * :func:`assoc_recurrence`      — :func:`torch.associative_scan` (fused kernel)
                                   with automatic fallback to Hillis-Steele.
 
 The previous hand-written Blelloch up/down-sweep used strided indexed
 assignment (``a[:, :, idx_r] = ...``), which compiles to non-contiguous
 scatter writes that are 3–10× slower than reshape-based ops on modern GPUs.
-The Hillis-Steele formulation here uses only ``F.pad`` + slicing, eliminating
-that anti-pattern; the production path prefers ``torch.associative_scan``.
+The Hillis-Steele formulation here uses only in-place slicing inside a custom
+autograd Function, keeping the graph correct while avoiding the large
+per-level ``torch.cat`` allocations that blow up memory on long sequences.
 """
 
 from __future__ import annotations
@@ -49,6 +50,19 @@ def _get_assoc_fn():
     return _ASSOC_FN
 
 
+def _hillis_steele_inplace(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Pure math Hillis-Steele scan; no autograd tracking."""
+    T = a.shape[-2]
+    A = a.clone()
+    B = b.clone()
+    shift = 1
+    while shift < T:
+        B[..., shift:, :] = A[..., shift:, :] * B[..., :-shift, :] + B[..., shift:, :]
+        A[..., shift:, :] = A[..., shift:, :] * A[..., :-shift, :]
+        shift *= 2
+    return B
+
+
 def seq_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Sequential reference: h_t = a_t·h_{t-1} + b_t. Scan along dim=-2."""
     T = a.shape[-2]
@@ -60,35 +74,55 @@ def seq_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return torch.stack(out, dim=-2)
 
 
+class _HillisSteeleScan(torch.autograd.Function):
+    """Custom autograd wrapper around an in-place Hillis-Steele scan.
+
+    The in-place forward is memory-efficient; the backward is another in-place
+    scan over the reversed sequence.
+
+    Forward:  h_t = a_t h_{t-1} + b_t,   h_0 = 0.
+    Backward: r_s = g_s + a_{s+1} r_{s+1},   r_{T+1} = 0.
+              grad_a_s = r_s · h_{s-1}
+              grad_b_s = r_s
+    """
+
+    @staticmethod
+    def forward(ctx, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        h = _hillis_steele_inplace(a, b)
+        ctx.save_for_backward(a, h)
+        return h
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        a, h = ctx.saved_tensors
+        T = a.shape[-2]
+
+        # Reverse-scan coefficients: coeff_rev[t] = a_rev[t-1] for t>=1,
+        # coeff_rev[0] = 1 (identity, so the leading row is just go_rev[0]).
+        a_rev = a.flip(-2)
+        ones = torch.ones_like(a_rev[..., :1, :])
+        coeff_rev = torch.cat([ones, a_rev[..., :-1, :]], dim=-2)
+        go_rev = grad_output.flip(-2)
+
+        r_rev = _hillis_steele_inplace(coeff_rev, go_rev)
+        r = r_rev.flip(-2)
+
+        # grad_a_s = r_s * h_{s-1}; prepend zero state for h_0.
+        h_prev = torch.zeros_like(h[..., :1, :])
+        if T > 1:
+            h_prev = torch.cat([h_prev, h[..., :-1, :]], dim=-2)
+        grad_a = r * h_prev
+
+        return grad_a, r
+
+
 def hillis_steele_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Vectorized inclusive scan via recursive doubling (Hillis-Steele).
 
-    No indexed assignment: each level shifts by ``F.pad`` and combines with a
-    pointwise op. O(T log T) work, fully parallel, correct for real or complex.
+    Implemented as a custom autograd Function so the in-place recursive-doubling
+    updates do not break PyTorch's version tracking.
     """
-    T = a.shape[-2]
-    A = a
-    B = b
-    shift = 1
-    # pad tuple is (last-dim-left, last-dim-right, time-left, time-right);
-    # we only pad the time axis on the left by `shift`.
-    while shift < T:
-        # The leading `shift` rows must act as the identity element (decay=1,
-        # input=0) so the combine is a no-op there. Built with cat so it works
-        # for real and complex dtypes alike (F.pad's constant value is real-only).
-        # A and B may have different trailing dims (e.g. decay is broadcast over
-        # the state dimension), so pad each to its own width.
-        a_lead_shape = (*A.shape[:-2], shift, A.shape[-1])
-        b_lead_shape = (*B.shape[:-2], shift, B.shape[-1])
-        ones = torch.ones(a_lead_shape, dtype=A.dtype, device=A.device)
-        zeros = torch.zeros(b_lead_shape, dtype=B.dtype, device=B.device)
-        A_prev = torch.cat([ones, A], dim=-2)[..., :T, :]
-        B_prev = torch.cat([zeros, B], dim=-2)[..., :T, :]
-        # combine(prev, cur):  A_new = A_cur·A_prev ,  B_new = A_cur·B_prev + B_cur
-        B = A * B_prev + B
-        A = A * A_prev
-        shift *= 2
-    return B
+    return _HillisSteeleScan.apply(a, b)
 
 
 def assoc_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
