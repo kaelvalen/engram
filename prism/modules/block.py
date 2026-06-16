@@ -85,8 +85,6 @@ class PRISMBlock(Protocol):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | DeltaState | None]: ...
 
 
-from prism.layer_tokens import LAYER_TOKENS
-
 BlockBuilder = Callable[["PRISMConfig"], nn.Module]
 
 # Registry mapping per-layer role tokens to builder callables.  The ``s4`` token
