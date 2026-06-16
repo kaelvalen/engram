@@ -59,11 +59,7 @@ def task_vocab(scp: dict[str, dict], task: str) -> list[str]:
         key = "diagnostic" if task == "diag" else task
         return sorted(c for c, r in scp.items() if _flag(r, key))
     if task == "subdiag":
-        subs = {
-            _str(r, "diagnostic_subclass")
-            for r in scp.values()
-            if _flag(r, "diagnostic")
-        }
+        subs = {_str(r, "diagnostic_subclass") for r in scp.values() if _flag(r, "diagnostic")}
         return sorted(s for s in subs if s)
     raise ValueError(f"Unknown PTB-XL task {task!r}; valid: {TASKS}")
 
