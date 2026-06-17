@@ -39,8 +39,8 @@ Shared budget: `hidden_dim=256, num_layers=12, num_heads=8` (~8M params).
 | Mamba-2 only (SSD) | `train.py --modality <m> --ssm-kind ssd --block-pattern s4` |
 | Gated DeltaNet only | `train.py --modality <m> --block-pattern delta` |
 | PRISM legacy (S4D + Delta) | `train.py --modality <m> --ssm-kind s4d_legacy --s4d-init lin` |
-| ResNet1D baseline | `scripts/train_baseline.py --model resnet1d --task ecg` |
-| Transformer baseline | `scripts/train_baseline.py --model transformer --task ecg` |
+| ResNet1D baseline | `scripts/train_baseline.py --model resnet1d --task ecg --window-size 1000 --ecg-task superdiag --ecg-multilabel` |
+| Transformer baseline | `scripts/train_baseline.py --model transformer --task ecg --window-size 1000 --ecg-task superdiag --ecg-multilabel` |
 
 `<m> ∈ {ecg, image, audio}`. **Same hyperparameters, no per-modality tuning** —
 that portability is the claim.
@@ -69,11 +69,45 @@ Report **your hardware's** numbers — do not quote the paper's H100 figures.
 
 ```
 DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks.sh
-python scripts/aggregate_results.py output/benchmarks   # mean ± std
+python scripts/aggregate_results.py output/benchmarks --metric val_macro_auc   # mean ± std
 ```
 
-Budget ≈ 30–60 single-GPU-hours (4090/A100). If constrained: drop sCIFAR,
+Budget ≈ 30–60 single-GPU-hours (4090/A100/5090). If constrained: drop sCIFAR,
 run 2 seeds for ablations.
+
+## RTX 5090 / Blackwell
+
+For an NVIDIA RTX 5090 use the dedicated script. It runs the full paper matrix
+with `torch.compile` enabled and the expandable-segments allocator:
+
+```
+DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks_rtx5090.sh
+python scripts/aggregate_results.py output/benchmarks_rtx5090 --metric val_macro_auc
+```
+
+Requirements for sm_120 (Blackwell):
+- PyTorch >=2.12 built against CUDA 13.0+ / cuDNN 9.9+.
+- `flash-linear-attention`'s Triton kernels may not yet support sm_120, so the
+  script keeps the default reference delta backend and `torch.associative_scan`
+  SSD backend. Disable compile with `COMPILE=0` if the first run fails during
+  `torch.compile` warm-up.
+
+## Running on a constrained GPU (≤8 GB laptop)
+
+The paper matrix (`hidden_dim=256, num_layers=12, num_heads=8`) needs ~16 GB
+VRAM. On an 8 GB laptop GPU the default `run_benchmarks.sh` will OOM during the
+first training step. Use the reduced script instead:
+
+```
+DATA_ROOT=./datasets SEEDS="0" EPOCHS=10 bash scripts/run_benchmarks_laptop.sh
+python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc
+```
+
+This keeps the **same protocol** (full 10 s ECG, multi-label macro-AUROC) but
+shrinks the backbone to `hidden_dim=64, num_layers=4, num_heads=4` and uses
+batch size 8. It is meant for **pipeline validation and quick iteration only**;
+do not quote these numbers as the paper's main results. Add optional ablations
+with `RUN_ABLATIONS=1` (adds ~2× runtime).
 
 ## Honest gaps / TODO before submission
 

@@ -35,7 +35,9 @@ class ResNet1DClassifier(nn.Module):
         self.blocks = nn.Sequential(*[_ResBlock1D(base_channels) for _ in range(num_blocks)])
         self.head = nn.Linear(base_channels, num_classes)
 
-    def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None) -> dict:
+    def forward(
+        self, x: torch.Tensor, labels: torch.Tensor | None = None, modality: str | None = None
+    ) -> dict:
         # x: [B, T, C] -> conv1d expects [B, C, T]
         x = x.transpose(1, 2)
         x = self.stem(x)

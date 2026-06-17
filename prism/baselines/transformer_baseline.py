@@ -41,10 +41,13 @@ class TransformerSequenceClassifier(nn.Module):
         pe[0, :, 1::2] = torch.cos(position * div_term)
         self.register_buffer("pe", pe)
 
-    def forward(self, x: torch.Tensor, labels: torch.Tensor | None = None) -> dict:
+    def forward(
+        self, x: torch.Tensor, labels: torch.Tensor | None = None, modality: str | None = None
+    ) -> dict:
         b, t, _ = x.shape
         h = self.proj(x) + self.pe[:, :t, :]
-        h = self.encoder(h, is_causal=True)
+        mask = nn.Transformer.generate_square_subsequent_mask(t, device=x.device)
+        h = self.encoder(h, mask=mask, is_causal=True)
         h = self.norm(h.mean(dim=1))
         logits = self.head(h)
         out: dict = {"logits": logits}
