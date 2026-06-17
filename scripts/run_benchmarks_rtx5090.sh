@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # PRISM benchmark matrix tuned for NVIDIA RTX 5090 (Blackwell / sm_120).
 #
-# Assumes a single GPU with >=24 GB VRAM. The RTX 5090 has enough headroom
-# for the full paper config (hidden_dim=256, num_layers=12, num_heads=8,
-# ~9.9M params) at batch size 64 across all three modalities.
+# Assumes a single GPU with >=24 GB VRAM. The RTX 5090 runs the full paper
+# config (hidden_dim=256, num_layers=12, num_heads=8, ~9.9M params) at batch
+# size 32 across all three modalities. Batch size 64 OOMs on 32 GB because the
+# SSD scan tensor scales linearly with batch size.
 #
 # Blackwell-specific notes:
 # - PyTorch >=2.12 with cuDNN 9.9+ / CUDA 13.0+ is required for sm_120 support.
@@ -24,7 +25,7 @@ DATA_ROOT="${DATA_ROOT:-./datasets}"
 SEEDS="${SEEDS:-0 1 2}"
 EPOCHS="${EPOCHS:-50}"
 AMP="${AMP:-bf16}"
-BATCH_SIZE="${BATCH_SIZE:-64}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
 COMPILE="${COMPILE:-1}"
 RESULTS="${RESULTS:-output/benchmarks_rtx5090}"
 mkdir -p "$RESULTS"

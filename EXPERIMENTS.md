@@ -78,14 +78,17 @@ run 2 seeds for ablations.
 ## RTX 5090 / Blackwell
 
 For an NVIDIA RTX 5090 use the dedicated script. It runs the full paper matrix
-with `torch.compile` enabled and the expandable-segments allocator:
+with `torch.compile` enabled and the expandable-segments allocator. Default
+batch size is 32 (batch size 64 OOMs on 32 GB because the SSD scan scales
+linearly with batch size):
 
 ```
 DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks_rtx5090.sh
 python scripts/aggregate_results.py output/benchmarks_rtx5090 --metric val_macro_auc
 ```
 
-Requirements for sm_120 (Blackwell):
+Override batch size with `BATCH_SIZE=16` if needed. Requirements for sm_120
+(Blackwell):
 - PyTorch >=2.12 built against CUDA 13.0+ / cuDNN 9.9+.
 - `flash-linear-attention`'s Triton kernels may not yet support sm_120, so the
   script keeps the default reference delta backend and `torch.associative_scan`
