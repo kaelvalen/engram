@@ -43,6 +43,7 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
         scan_backend=args.scan_backend,
         swa_window=args.swa_window,
         compile=args.compile,
+        gradient_checkpointing=args.gradient_checkpointing,
     )
     layer_pattern = getattr(args, "layer_pattern", None)
     if layer_pattern:
@@ -377,6 +378,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--swa-window", type=int, default=128, help="Sliding-window attn span.")
     parser.add_argument(
         "--compile", action="store_true", help="torch.compile the model in the trainer."
+    )
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action="store_true",
+        help="Recompute layer activations during backward to save VRAM (slower epochs).",
     )
     parser.add_argument(
         "--data-root",

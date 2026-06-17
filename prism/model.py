@@ -43,7 +43,17 @@ class PRISMBackbone(nn.Module):
 
         new_states = []
         for block, layer_type, state in zip(self.blocks, self.pattern, states):
-            x, new_state = forward_block(block, layer_type, x, state)
+            if self.training and self.cfg.gradient_checkpointing:
+                x, new_state = torch.utils.checkpoint.checkpoint(
+                    forward_block,
+                    block,
+                    layer_type,
+                    x,
+                    state,
+                    use_reentrant=False,
+                )
+            else:
+                x, new_state = forward_block(block, layer_type, x, state)
             new_states.append(new_state)
 
         return x, new_states

@@ -77,6 +77,11 @@ class PRISMConfig:
     # torch.compile the backbone (trainer reads this flag).
     compile: bool = False
 
+    # Gradient checkpointing: trade compute for memory by recomputing layer
+    # activations during backward. Useful on 24-32 GB GPUs for the full paper
+    # config where the SSD scan tree is large.
+    gradient_checkpointing: bool = False
+
     # Modaliteler
     modalities: list[ModalityConfig] = field(default_factory=list)
 

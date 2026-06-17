@@ -31,7 +31,7 @@ RESULTS="${RESULTS:-output/benchmarks_rtx5090}"
 mkdir -p "$RESULTS"
 
 # Full paper backbone budget (~8M params).
-COMMON="--hidden-dim 256 --num-layers 12 --num-heads 8 --batch-size $BATCH_SIZE --amp $AMP --data-root $DATA_ROOT --epochs $EPOCHS"
+COMMON="--hidden-dim 256 --num-layers 12 --num-heads 8 --batch-size $BATCH_SIZE --amp $AMP --data-root $DATA_ROOT --epochs $EPOCHS --gradient-checkpointing"
 [[ "$COMPILE" == "1" ]] && COMMON="$COMMON --compile"
 
 run () {  # run <name> <seed> <extra-args...>
