@@ -293,6 +293,3 @@ for what still needs doing before submission.
 Builds on ideas and (optionally) kernels from Mamba-2 / Mamba-3 (Dao, Gu et al.),
 Gated DeltaNet (Yang, Kautz, Hatamizadeh et al.), and
 [flash-linear-attention](https://github.com/fla-org/flash-linear-attention).
-
-Contributed upstream to FLA: bucketed `B×H` autotune key for the gated delta rule kernel
-([flash-linear-attention #117](https://github.com/fla-org/flash-linear-attention/issues/117)).
