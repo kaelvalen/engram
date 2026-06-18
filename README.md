@@ -35,11 +35,12 @@ The per-layer role tokens are defined in `prism.layer_tokens` as `("s4", "delta"
 function; new mixers can be registered with `@register_block("token")` without
 changing the core config or model code.
 
-> **Heads-up — this is a research pivot in progress.** The architecture and
-> tooling are implemented and tested; the *benchmark numbers are not filled in
-> yet* (they need GPU + datasets). See [EXPERIMENTS.md](EXPERIMENTS.md) for the
-> locked matrix and honest gaps, and [paper/PAPER_DRAFT.md](paper/PAPER_DRAFT.md)
-> for the manuscript skeleton.
+> **Status: architecture implemented and tested; benchmark runs in progress.**
+> 111 tests pass (equivalence, gradcheck, streaming, property-based). The
+> benchmark numbers require GPU + datasets — the locked experiment matrix,
+> primary metric (macro AUROC), and baseline targets are specified in
+> [EXPERIMENTS.md](EXPERIMENTS.md) before any runs complete. Paper skeleton at
+> [paper/PAPER_DRAFT.md](paper/PAPER_DRAFT.md).
 
 ---
 
@@ -292,3 +293,6 @@ for what still needs doing before submission.
 Builds on ideas and (optionally) kernels from Mamba-2 / Mamba-3 (Dao, Gu et al.),
 Gated DeltaNet (Yang, Kautz, Hatamizadeh et al.), and
 [flash-linear-attention](https://github.com/fla-org/flash-linear-attention).
+
+Contributed upstream to FLA: bucketed `B×H` autotune key for the gated delta rule kernel
+([flash-linear-attention #117](https://github.com/fla-org/flash-linear-attention/issues/117)).
