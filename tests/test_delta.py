@@ -71,3 +71,23 @@ def test_chunkwise_single_chunk():
 
     torch.testing.assert_close(o_par, o_ref, rtol=2e-3, atol=2e-3)
     torch.testing.assert_close(S_par, S_ref, rtol=2e-3, atol=2e-3)
+
+
+def test_chunkwise_stable_with_tiny_alpha():
+    """Learned forget gates can drive α ≪ 1; the chunked path must not divide
+    by ᾱ (which underflows to 0 in fp32) — regression test for NaN/inf."""
+    torch.manual_seed(0)
+    B, H, T, Dh = 2, 2, 256, 16
+    q = torch.randn(B, H, T, Dh)
+    k = torch.randn(B, H, T, Dh)
+    v = torch.randn(B, H, T, Dh)
+    alpha = torch.full((B, H, T), 0.02)  # ᾱ over 64 tokens ≈ 1e-109
+    beta = torch.sigmoid(torch.randn(B, H, T))
+    S0 = torch.zeros(B, H, Dh, Dh)
+
+    o_ref, S_ref = GatedDeltaRule._recurrent_naive(q, k, v, alpha, beta, S0)
+    o_par, S_par = GatedDeltaRule._recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size=64)
+
+    assert torch.isfinite(o_par).all() and torch.isfinite(S_par).all()
+    torch.testing.assert_close(o_par, o_ref, rtol=2e-3, atol=2e-3)
+    torch.testing.assert_close(S_par, S_ref, rtol=2e-3, atol=2e-3)

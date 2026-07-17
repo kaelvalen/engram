@@ -171,13 +171,17 @@ class GatedDeltaRule(nn.Module):
 
     @staticmethod
     def _recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size):
-        """Vectorized chunkwise delta rule, mathematically equivalent to _recurrent_naive.
+        """Vectorized chunkwise gated delta rule, mathematically equivalent to
+        _recurrent_naive — in the division-free (log-space decay-ratio) form.
 
-        Within each chunk we substitute u_t = β_t v_t - α_t β_t S_{t-1} k_t so the
-        recurrence becomes S_t = α_t S_{t-1} + u_t k_t^T. Rescaling ũ_t = u_t / ᾱ_t
-        (with ᾱ_t = Π_{i≤t} α_i) yields a triangular linear system in ũ that we
-        solve in a single batched call. Output and state update are then two
-        batched matmuls per chunk. T sequential matmuls → O(1) per chunk.
+        Within a chunk, with e_t = v_t - α_t S_{t-1} k_t and γ_t = Π_{i≤t} α_i:
+            e_t  = v_t - γ_t (S_0 k_t) - Σ_{s<t} (γ_t/γ_s) β_s (k_t·k_s) e_s
+            o_t  = γ_t (S_0 q_t) + Σ_{s≤t} (γ_t/γ_s) β_s (q_t·k_s) e_s
+            S_C  = γ_C S_0 + Σ_s (γ_C/γ_s) β_s e_s k_sᵀ
+
+        All coefficients are decay ratios γ_t/γ_s ≤ 1, so nothing divides by
+        ᾱ: the solve stays finite even when the forget gate learns α ≪ 1
+        (the previous 1/ᾱ form underflowed to inf and NaN'd in fp32).
         """
         B, H, T, Dh = q.shape
         device = q.device
@@ -198,38 +202,35 @@ class GatedDeltaRule(nn.Module):
             a_c = af[:, :, start:end]  # [B,H,C]
             b_c = bf[:, :, start:end]
 
-            # ᾱ_t and 1/ᾱ_t via cumulative log-sum for numerical safety.
+            # Cumulative decay γ_t and pairwise decay ratios γ_t/γ_s (s ≤ t).
             log_a = torch.log(a_c.clamp(min=1e-12))
-            cum_log = torch.cumsum(log_a, dim=-1)  # [B,H,C]
-            alpha_bar = torch.exp(cum_log)  # [B,H,C]
-            inv_alpha_bar = torch.exp(-cum_log)
-
-            # Pairwise k inner products and causal masks (built once per chunk).
-            kk = torch.einsum("bhcd,bhsd->bhcs", k_c, k_c)  # [B,H,C,C]
+            cum = torch.cumsum(log_a, dim=-1)  # [B,H,C]
+            gamma = torch.exp(cum)  # [B,H,C], ≤ 1
+            # log(γ_t/γ_s) = cum_t - cum_s, only kept for s ≤ t (≤ 0 there).
+            log_ratio = cum.unsqueeze(-1) - cum.unsqueeze(-2)  # [B,H,C,C]
             mask_strict = torch.tril(torch.ones(C, C, device=device, dtype=dtype), diagonal=-1)
             mask_inc = torch.tril(torch.ones(C, C, device=device, dtype=dtype), diagonal=0)
+            ratio_strict = torch.exp(log_ratio * mask_strict) * mask_strict
+            ratio_inc = torch.exp(log_ratio * mask_inc) * mask_inc
 
-            # System matrix L: L_{t,s} = β_t (k_t · k_s) for s<t, 0 elsewhere.
-            # Combined with unit diagonal (via unitriangular=True) this is (I + L).
-            L = b_c.unsqueeze(-1) * kk * mask_strict  # [B,H,C,C]
-
-            # rhs row t: (β_t / ᾱ_t) v_t - β_t (S_0 k_t)
+            kk = torch.einsum("bhcd,bhsd->bhcs", k_c, k_c)  # [B,H,C,C]
+            # (I + M) e = v - γ⊙(S_0 k),  M_{t,s} = (γ_t/γ_s) β_s (k_t·k_s), s < t
+            L = ratio_strict * b_c.unsqueeze(-2) * kk
             Sk = torch.einsum("bhij,bhcj->bhci", S, k_c)  # [B,H,C,Dh]
-            rhs = (b_c * inv_alpha_bar).unsqueeze(-1) * v_c - b_c.unsqueeze(-1) * Sk
+            rhs = v_c - gamma.unsqueeze(-1) * Sk
+            e = torch.linalg.solve_triangular(L, rhs, upper=False, unitriangular=True)
 
-            # Forward triangular solve for ũ.
-            u_tilde = torch.linalg.solve_triangular(L, rhs, upper=False, unitriangular=True)
-
-            # Output: o_t = ᾱ_t · [(S_0 q_t) + Σ_{s≤t} ũ_s (k_s · q_t)]
+            # o_t = γ_t (S_0 q_t) + Σ_{s≤t} (γ_t/γ_s) β_s (q_t·k_s) e_s
             Sq = torch.einsum("bhij,bhcj->bhci", S, q_c)  # [B,H,C,Dh]
-            qk = torch.einsum("bhcd,bhsd->bhcs", q_c, k_c) * mask_inc
-            attn = torch.einsum("bhcs,bhsd->bhcd", qk, u_tilde)
-            o_chunk = alpha_bar.unsqueeze(-1) * (Sq + attn)
+            qk = torch.einsum("bhcd,bhsd->bhcs", q_c, k_c)
+            W = ratio_inc * b_c.unsqueeze(-2) * qk
+            o_chunk = gamma.unsqueeze(-1) * Sq + torch.einsum("bhcs,bhsd->bhcd", W, e)
             outs.append(o_chunk)
 
-            # State: S_C = ᾱ_C · [S_0 + Ũ^T K]
-            UK = torch.einsum("bhcd,bhce->bhde", u_tilde, k_c)
-            S = alpha_bar[:, :, -1].view(B, H, 1, 1) * (S + UK)
+            # S_C = γ_C S_0 + Σ_s (γ_C/γ_s) β_s e_s k_sᵀ
+            last_ratio = torch.exp(cum[:, :, -1:] - cum)  # [B,H,C], γ_C/γ_s ≤ 1
+            UK = torch.einsum("bhcd,bhce->bhde", (last_ratio * b_c).unsqueeze(-1) * e, k_c)
+            S = gamma[:, :, -1].view(B, H, 1, 1) * S + UK
 
         out = torch.cat(outs, dim=2)
         return out.to(q.dtype), S
