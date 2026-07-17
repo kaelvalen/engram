@@ -53,11 +53,14 @@ def evaluate(
 
     Long contexts are evaluated through the streaming state hand-off
     (chunked ≡ full by the fp64 state-passing tests), bounding peak memory
-    on small GPUs.
+    on small GPUs.  The eval batch is additionally capped so that
+    batch × context ≤ 16k tokens (the training allocator cache is still
+    resident during evaluation).
     """
     model.eval()
     g = torch.Generator().manual_seed(seed)
-    ids, labels = make_mqar_batch(task_cfg, batch_size, g, device)
+    eval_batch = max(1, min(batch_size, 16384 // task_cfg.seq_len))
+    ids, labels = make_mqar_batch(task_cfg, eval_batch, g, device)
     with torch.no_grad():
         if ids.shape[1] <= chunk_len:
             logits = model(ids)["logits"]
