@@ -1,6 +1,6 @@
 from .config import SABERConfig
-from .saber import SABER, SABERState, SABERBackbone
 from .diagnostics import SABERDiagnostics, SABERRecovery, SABERTrainer
+from .saber import SABER, SABERBackbone, SABERState
 
 __all__ = [
     "SABERConfig",

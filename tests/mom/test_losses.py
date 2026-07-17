@@ -1,9 +1,9 @@
 """Stability objectives (spec §3.7): Switch-style load balancing + router z-loss.
 
-    L_bal = K · Σ_e f_e · P_e     f_e: hard routed fraction (non-differentiable)
-                                  P_e: mean softmax probability (differentiable)
-    L_z   = mean_t ( logsumexp(z_t) )²
-    L     = L_task + λ_bal · L_bal + λ_z · L_z
+L_bal = K · Σ_e f_e · P_e     f_e: hard routed fraction (non-differentiable)
+                              P_e: mean softmax probability (differentiable)
+L_z   = mean_t ( logsumexp(z_t) )²
+L     = L_task + λ_bal · L_bal + λ_z · L_z
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from __future__ import annotations
 import math
 
 import torch
-
 from mom.losses import load_balancing_loss, mom_auxiliary_loss, router_z_loss
 from mom.router import RoutingOutput
 

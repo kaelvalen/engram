@@ -58,9 +58,7 @@ def expert_forward(
     if name == "ssd":
         return expert(x, state, write_mask=write_mask, freeze_on_mask=not cfg.decay_on_skip)
     if name == "gdr":
-        return expert(
-            x, state, write_mask=write_mask, freeze_on_mask=not cfg.gdr_decay_on_skip
-        )
+        return expert(x, state, write_mask=write_mask, freeze_on_mask=not cfg.gdr_decay_on_skip)
     if name == "swa":
         raise NotImplementedError("SWA expert is scheduled for v2 (spec §1.4)")
     raise ValueError(f"unknown expert {name!r}")

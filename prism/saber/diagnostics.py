@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import SABERConfig
-from .saber import SABER, SABERState
+from .saber import SABER
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +59,18 @@ class SABERDiagnostics:
     def check_r1_predictor_dominance(self, cfg: SABERConfig) -> bool:
         if len(self.budget_history) < cfg.r1_patience:
             return False
-        recent_budget = self.budget_history[-cfg.r1_patience:]
+        recent_budget = self.budget_history[-cfg.r1_patience :]
         avg_budget = sum(recent_budget) / len(recent_budget)
         return avg_budget < cfg.r1_budget_threshold * cfg.budget_floor
 
     def check_r2_memory_dominance(self, cfg: SABERConfig) -> bool:
-        if len(self.memory_grad_norm_history) < cfg.r2_patience or len(self.backbone_grad_norm_history) < cfg.r2_patience:
+        if (
+            len(self.memory_grad_norm_history) < cfg.r2_patience
+            or len(self.backbone_grad_norm_history) < cfg.r2_patience
+        ):
             return False
-        recent_mem = self.memory_grad_norm_history[-cfg.r2_patience:]
-        recent_backbone = self.backbone_grad_norm_history[-cfg.r2_patience:]
+        recent_mem = self.memory_grad_norm_history[-cfg.r2_patience :]
+        recent_backbone = self.backbone_grad_norm_history[-cfg.r2_patience :]
         avg_mem = sum(recent_mem) / len(recent_mem)
         avg_backbone = sum(recent_backbone) / len(recent_backbone)
         return avg_mem > cfg.r2_grad_ratio_threshold * avg_backbone
@@ -75,7 +78,7 @@ class SABERDiagnostics:
     def check_r3_noisy_overactivation(self, cfg: SABERConfig) -> bool:
         if len(self.budget_var_history) < cfg.r3_patience:
             return False
-        recent_var = self.budget_var_history[-cfg.r3_patience:]
+        recent_var = self.budget_var_history[-cfg.r3_patience :]
         avg_var = sum(recent_var) / len(recent_var)
         threshold = (cfg.budget_alpha * cfg.r3_var_threshold_multiplier) ** 2
         return avg_var > threshold
@@ -83,7 +86,7 @@ class SABERDiagnostics:
     def check_r4_compute_starvation(self, cfg: SABERConfig) -> bool:
         if len(self.budget_history) < cfg.r4_patience:
             return False
-        recent_budget = self.budget_history[-cfg.r4_patience:]
+        recent_budget = self.budget_history[-cfg.r4_patience :]
         avg_budget = sum(recent_budget) / len(recent_budget)
         threshold = cfg.budget_floor + cfg.r4_budget_threshold * cfg.budget_alpha
         return avg_budget < threshold
@@ -148,14 +151,8 @@ class SABERRecovery:
         self.cfg.budget_floor = int(self.cfg.budget_floor * 1.2)
 
     def _recover_r2(self):
-        for param in self.saber.memory.slot_embeddings:
-            param.grad = None
-
-        for param in self.saber.memory.parameters():
-            param.requires_grad_(False)
-
-        for param in self.saber.backbone.parameters() if hasattr(self.saber, 'backbone') else []:
-            param.requires_grad_(True)
+        self.saber.memory.slot_embeddings.grad = None
+        self.saber.memory.slot_embeddings.requires_grad_(False)
 
     def _recover_r3(self):
         self.saber.surprise.eps_scale *= 1.5
@@ -170,13 +167,15 @@ class SABERRecovery:
             self.saber.encoder.net[-1].weight.add_(noise)
 
     def _recover_r5(self):
+        # Reset the policy IN PLACE: replacing the module would orphan the
+        # optimizer's parameter references.
+        with torch.no_grad():
+            for p in self.saber.policy.parameters():
+                if p.dim() > 1:
+                    nn.init.normal_(p, mean=0.0, std=0.02)
+                else:
+                    nn.init.zeros_(p)
         self.cfg.policy_state_dim = min(self.cfg.policy_state_dim, 64)
-        self.saber.policy = self.saber.policy.__class__(self.cfg)
-
-        vq_codebook = nn.Parameter(torch.randn(256, self.cfg.policy_state_dim) * 0.02)
-        self.saber.register_parameter("policy_vq_codebook", vq_codebook)
-
-        self.cfg.infonce_beta_start = self.cfg.infonce_beta_start
         self.saber.beta.data = torch.tensor(self.cfg.infonce_beta_start)
 
 
@@ -195,7 +194,14 @@ class SABERTrainer:
 
         self.recovery = SABERRecovery(saber_backbone.saber, cfg)
 
+        # One optimizer over saber param groups PLUS the backbone/head —
+        # otherwise phase-1 task training has nothing to step.
         param_groups = saber_backbone.saber.get_param_groups()
+        backbone_params = list(saber_backbone.backbone.parameters())
+        if saber_backbone.head is not None:
+            backbone_params += list(saber_backbone.head.parameters())
+        if backbone_params:
+            param_groups.append({"params": backbone_params, "lr": cfg.lr_slow, "name": "backbone"})
         self.optimizer = torch.optim.AdamW(param_groups)
 
     def get_phase(self) -> int:
@@ -206,12 +212,14 @@ class SABERTrainer:
         return 3
 
     def train_step(self, batch: dict) -> dict:
-        self.step += 1
         new_phase = self.get_phase()
         if new_phase != self.phase:
             self.phase = new_phase
-            logger.info(f"Entering Phase {self.phase} at step {self.step}")
+            logger.info(f"Entering Phase {self.phase} at step {self.step + 1}")
 
+        # Phase is decided by steps already completed, so each phase runs
+        # exactly its configured number of steps.
+        self.step += 1
         if self.phase == 1:
             return self._phase1_step(batch)
         elif self.phase == 2:
@@ -256,18 +264,30 @@ class SABERTrainer:
         y, saber_state, _, aux = self.saber_backbone(x)
         task_loss = F.cross_entropy(y, labels)
         infonce_loss = aux["infonce_loss"]
-        loss = task_loss + self.saber_backbone.saber.beta * infonce_loss
+        predictor_loss = aux["predictor_loss"]
+        loss = (
+            task_loss
+            + self.saber_backbone.saber.beta * infonce_loss
+            + self.cfg.predictor_loss_weight * predictor_loss
+        )
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.saber_backbone.saber.update_ema()
 
         self.recovery.diagnostics.update(
             aux["budget"],
             infonce_loss,
         )
 
-        return {"loss": loss.item(), "task_loss": task_loss.item(), "infonce_loss": infonce_loss.item(), "phase": 2}
+        return {
+            "loss": loss.item(),
+            "task_loss": task_loss.item(),
+            "infonce_loss": infonce_loss.item(),
+            "predictor_loss": predictor_loss.item(),
+            "phase": 2,
+        }
 
     def _phase3_step(self, batch: dict) -> dict:
         for param in self.saber_backbone.parameters():
@@ -279,16 +299,34 @@ class SABERTrainer:
         y, saber_state, _, aux = self.saber_backbone(x)
         task_loss = F.cross_entropy(y, labels)
         infonce_loss = aux["infonce_loss"]
-        loss = task_loss + self.saber_backbone.saber.beta * infonce_loss
+        predictor_loss = aux["predictor_loss"]
+        loss = (
+            task_loss
+            + self.saber_backbone.saber.beta * infonce_loss
+            + self.cfg.predictor_loss_weight * predictor_loss
+        )
 
         self.optimizer.zero_grad()
         loss.backward()
 
-        policy_grad = sum(p.grad.norm().item() for p in self.saber_backbone.saber.policy.parameters() if p.grad is not None)
-        backbone_grad = sum(p.grad.norm().item() for p in self.saber_backbone.backbone.parameters() if p.grad is not None)
-        memory_grad = sum(p.grad.norm().item() for p in self.saber_backbone.saber.memory.parameters() if p.grad is not None)
+        policy_grad = sum(
+            p.grad.norm().item()
+            for p in self.saber_backbone.saber.policy.parameters()
+            if p.grad is not None
+        )
+        backbone_grad = sum(
+            p.grad.norm().item()
+            for p in self.saber_backbone.backbone.parameters()
+            if p.grad is not None
+        )
+        memory_grad = sum(
+            p.grad.norm().item()
+            for p in self.saber_backbone.saber.memory.parameters()
+            if p.grad is not None
+        )
 
         self.optimizer.step()
+        self.saber_backbone.saber.update_ema()
 
         self.recovery.diagnostics.update(
             aux["budget"],
@@ -312,6 +350,7 @@ class SABERTrainer:
             "loss": loss.item(),
             "task_loss": task_loss.item(),
             "infonce_loss": infonce_loss.item(),
+            "predictor_loss": predictor_loss.item(),
             "budget": aux["budget"].mean().item(),
             "surprise": aux["surprise"].mean().item(),
             "phase": 3,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os
 
@@ -229,7 +230,7 @@ def get_ecg_loaders(
     val = PTBXLDataset(root, "val", **kw)
     test = PTBXLDataset(root, "test", **kw)
 
-    worker_init = (_worker_init_fn, seed) if seed is not None else None
+    worker_init = functools.partial(_worker_init_fn, base_seed=seed) if seed is not None else None
     generator = torch.Generator().manual_seed(seed) if seed is not None else None
 
     return (
@@ -238,7 +239,7 @@ def get_ecg_loaders(
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
-            worker_init_fn=(lambda wid: _worker_init_fn(wid, seed)) if seed is not None else None,
+            worker_init_fn=worker_init,
             generator=generator,
         ),
         DataLoader(
@@ -246,7 +247,7 @@ def get_ecg_loaders(
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
-            worker_init_fn=(lambda wid: _worker_init_fn(wid, seed)) if seed is not None else None,
+            worker_init_fn=worker_init,
             generator=generator,
         ),
         DataLoader(
@@ -254,7 +255,7 @@ def get_ecg_loaders(
             batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
-            worker_init_fn=(lambda wid: _worker_init_fn(wid, seed)) if seed is not None else None,
+            worker_init_fn=worker_init,
             generator=generator,
         ),
     )

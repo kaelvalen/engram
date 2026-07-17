@@ -150,5 +150,5 @@ def routing_stats(routings: list[RoutingOutput]) -> dict:
                 "min_utilization": float(util.min()),
             }
         )
-    min_util = min(l["min_utilization"] for l in layers) if layers else 0.0
+    min_util = min(layer["min_utilization"] for layer in layers) if layers else 0.0
     return {"layers": layers, "min_utilization": min_util}

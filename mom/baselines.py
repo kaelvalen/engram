@@ -16,7 +16,7 @@ from dataclasses import replace
 
 import torch
 import torch.nn as nn
-from prism.modules.delta import DeltaBlock, DeltaState
+from prism.modules.delta import DeltaBlock
 from prism.modules.norm import RMSNorm
 from prism.modules.ssd import SSDBlock
 

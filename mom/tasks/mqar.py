@@ -28,8 +28,7 @@ class MQARConfig:
         needed = 3 * self.num_pairs + 1
         if self.seq_len < needed:
             raise ValueError(
-                f"seq_len={self.seq_len} too short for {self.num_pairs} pairs "
-                f"(need ≥ {needed})"
+                f"seq_len={self.seq_len} too short for {self.num_pairs} pairs (need ≥ {needed})"
             )
         if self.vocab_size < 8:
             raise ValueError("vocab_size too small")

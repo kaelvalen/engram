@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from mom.block import MoMBlock
 from mom.config import MoMConfig
 from mom.reference import sequential_block_reference
-from mom.state import CONV_KEY, SHARED_KEY, ExpertStateDict
+from mom.state import SHARED_KEY, ExpertStateDict
 
 RTOL = 1e-10
 ATOL = 1e-12
@@ -58,8 +57,9 @@ def test_equivalence_default_k1(seed):
     torch.testing.assert_close(y_dense, y_ref, rtol=RTOL, atol=ATOL)
     for k in up_ref:
         a, r = up_dense[k], up_ref[k]
-        torch.testing.assert_close(a.S if hasattr(a, "S") else a, r.S if hasattr(r, "S") else r,
-                                   rtol=RTOL, atol=ATOL)
+        torch.testing.assert_close(
+            a.S if hasattr(a, "S") else a, r.S if hasattr(r, "S") else r, rtol=RTOL, atol=ATOL
+        )
 
 
 @pytest.mark.parametrize("seed", [0, 1])
@@ -108,8 +108,9 @@ def test_equivalence_with_state_in():
     torch.testing.assert_close(y_dense, y_ref, rtol=RTOL, atol=ATOL)
     for k in up_ref:
         a, r = up_dense[k], up_ref[k]
-        torch.testing.assert_close(a.S if hasattr(a, "S") else a, r.S if hasattr(r, "S") else r,
-                                   rtol=RTOL, atol=ATOL)
+        torch.testing.assert_close(
+            a.S if hasattr(a, "S") else a, r.S if hasattr(r, "S") else r, rtol=RTOL, atol=ATOL
+        )
 
 
 def test_equivalence_knockout():

@@ -7,7 +7,6 @@ import json
 import numpy as np
 import pytest
 import torch
-
 from mom.analysis import generate_report
 from mom.analysis.composition import reference_composition, time_averaged_utilization
 from mom.analysis.dynamics import (
@@ -148,10 +147,7 @@ def _history():
         {"entropy": 0.3, "utilization": [0.8, 0.2]},
         {"entropy": 0.25, "utilization": [0.85, 0.15]},
     ]
-    return [
-        {"step": i, "accuracy": 0.2 + 0.2 * i, "layers": [layers[i]]}
-        for i in range(4)
-    ]
+    return [{"step": i, "accuracy": 0.2 + 0.2 * i, "layers": [layers[i]]} for i in range(4)]
 
 
 def test_trajectories_from_history():

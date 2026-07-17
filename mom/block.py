@@ -46,9 +46,7 @@ class MoMBlock(nn.Module):
             mode=cfg.router_mode,
             seed=cfg.router_seed + 1000 * layer_idx,
         )
-        self.experts = nn.ModuleDict(
-            {name: build_expert(name, cfg) for name in cfg.experts}
-        )
+        self.experts = nn.ModuleDict({name: build_expert(name, cfg) for name in cfg.experts})
         self.shared = build_expert(cfg.shared_expert, cfg) if cfg.shared_expert else None
         self.norm2 = RMSNorm(cfg.hidden_dim)
         self.ffn = SwiGLU(cfg.hidden_dim, cfg.ffn_expand)
@@ -96,9 +94,7 @@ class MoMBlock(nn.Module):
         outs = []
         for e, (name, expert) in enumerate(self.experts.items()):
             st_in = states.get((i, name)) if states is not None else None
-            y_e, st_out = expert_forward(
-                name, expert, x_c, st_in, routing.mask[..., e], self.cfg
-            )
+            y_e, st_out = expert_forward(name, expert, x_c, st_in, routing.mask[..., e], self.cfg)
             updates[(i, name)] = st_out
             outs.append(y_e)
         y = combine_expert_outputs(outs, routing.gates)

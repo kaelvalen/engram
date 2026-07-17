@@ -120,10 +120,10 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
   accumulating macro AUROC in `loops.evaluate_multilabel_auc`, checkpoint
   selection on `val_macro_auc`, and `num_classes` derived from the task vocab.
   Each non-superdiag task is inherently multi-label. The mapping logic is tested
-  on a synthetic SCP table (`tests/test_ptbxl_tasks.py`); **validate the per-task
-  class counts against the real `scp_statements.csv` once the dataset is on disk**
-  (expected ≈ 5 / 23 / 44 / 19 / 12 / 71 classes for superdiag/subdiag/diag/form/
-  rhythm/all).
+  on a synthetic SCP table (`tests/test_ptbxl_tasks.py`) **and validated against
+  the real `scp_statements.csv`** by `scripts/validate_ptbxl_tasks.py`:
+  vocab sizes are exactly 5 / 23 / 44 / 19 / 12 / 71 for superdiag/subdiag/
+  diag/form/rhythm/all, and all 21,799 records' SCP codes resolve.
 - **Bootstrap CIs** are implemented (`metrics.bootstrap_auroc_ci`, 1000-resample,
   matches Strodthoff Table I `0.928(05)` format). Run it on the **test** fold for
   the final number; the in-training AUROC uses the val fold.

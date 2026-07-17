@@ -12,7 +12,6 @@ Modes: ``learned`` (default), ``uniform`` (B4: g = 1/K frozen),
 from __future__ import annotations
 
 import torch
-
 from mom.masking import topk_mask
 from mom.router import RoutingOutput, TokenRouter
 
@@ -91,9 +90,7 @@ def test_near_uniform_initialisation():
     r = _router(K=4, k=1, init_std=0.01)
     out = r(torch.randn(4, 32, 16))
     # N(0, 0.01²) weights ⇒ near-uniform probabilities
-    torch.testing.assert_close(
-        out.probs, torch.full_like(out.probs, 0.25), rtol=0.35, atol=0.05
-    )
+    torch.testing.assert_close(out.probs, torch.full_like(out.probs, 0.25), rtol=0.35, atol=0.05)
 
 
 def test_determinism_same_seed():

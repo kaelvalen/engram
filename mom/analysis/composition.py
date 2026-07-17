@@ -9,9 +9,7 @@ import numpy as np
 
 def time_averaged_utilization(routings) -> np.ndarray:
     """Per-layer fraction of tokens routed to each expert → (L, K)."""
-    return np.stack(
-        [r.mask.float().mean(dim=(0, 1)).cpu().numpy() for r in routings], axis=0
-    )
+    return np.stack([r.mask.float().mean(dim=(0, 1)).cpu().numpy() for r in routings], axis=0)
 
 
 def reference_composition(ratio: tuple[float, ...] = (3, 1)) -> np.ndarray:

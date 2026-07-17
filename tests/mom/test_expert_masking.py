@@ -31,16 +31,14 @@ ATOL = 1e-12
 
 def _ssd(dtype: torch.dtype = torch.float64) -> SSDMixer:
     torch.manual_seed(0)
-    return SSDMixer(hidden_dim=16, num_heads=2, state_dim=8, scan_backend="reference").to(
-        dtype
-    ).eval()
+    return (
+        SSDMixer(hidden_dim=16, num_heads=2, state_dim=8, scan_backend="reference").to(dtype).eval()
+    )
 
 
 def _gdr(dtype: torch.dtype = torch.float64) -> GatedDeltaRule:
     torch.manual_seed(0)
-    return GatedDeltaRule(hidden_dim=16, num_heads=2, qk_norm=True, chunk_size=4).to(
-        dtype
-    ).eval()
+    return GatedDeltaRule(hidden_dim=16, num_heads=2, qk_norm=True, chunk_size=4).to(dtype).eval()
 
 
 def _mask(B: int, T: int, dtype: torch.dtype = torch.float64) -> torch.Tensor:
@@ -52,11 +50,7 @@ def _ssd_masked_reference(mixer, x, mask, freeze_on_mask, state=None):
     """Per-token masked SSD recurrence built directly on the mixer's projections."""
     xv, Cc, a, dBx = mixer._project(x)  # a: [B,T,H], dBx: [B,T,H,P,N]
     B, T, H, P, N = dBx.shape
-    h = (
-        state.to(x.dtype).clone()
-        if state is not None
-        else torch.zeros(B, H, P, N, dtype=x.dtype)
-    )
+    h = state.to(x.dtype).clone() if state is not None else torch.zeros(B, H, P, N, dtype=x.dtype)
     outs = []
     for t in range(T):
         m_t = mask[:, t].view(B, 1, 1, 1)

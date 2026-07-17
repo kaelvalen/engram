@@ -13,9 +13,7 @@ def routing_assignments(model, input_ids: torch.Tensor) -> np.ndarray:
     For k>1 the highest-gated expert is taken as the assignment.
     """
     out = model(input_ids)
-    return np.stack(
-        [r.gates.argmax(-1).cpu().numpy() for r in out["routings"]], axis=0
-    )
+    return np.stack([r.gates.argmax(-1).cpu().numpy() for r in out["routings"]], axis=0)
 
 
 def heatmap_utilization(assignments: np.ndarray, num_experts: int) -> np.ndarray:

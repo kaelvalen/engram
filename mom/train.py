@@ -60,8 +60,7 @@ def _routing_log(routings, prev_indices: list | None) -> tuple[dict, list]:
     indices = [r.indices.detach().clone() for r in routings]
     if prev_indices is not None:
         flips = [
-            float((a != b).float().mean())
-            for a, b in zip(indices, prev_indices, strict=False)
+            float((a != b).float().mean()) for a, b in zip(indices, prev_indices, strict=False)
         ]
         stats["flip_rate"] = sum(flips) / len(flips) if flips else 0.0
     for layer in stats["layers"]:
@@ -118,9 +117,17 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
         torch.nn.utils.clip_grad_norm_(params, optim["grad_clip"])
         opt.step()
 
-        record = {"step": step, "task_loss": float(task_loss.detach()), "bal": bal, "z": z, "lr": lr}
+        record = {
+            "step": step,
+            "task_loss": float(task_loss.detach()),
+            "bal": bal,
+            "z": z,
+            "lr": lr,
+        }
         if (step + 1) % eval_every == 0 or step == steps - 1:
-            record["accuracy"] = evaluate(model, task_cfg, optim["batch_size"], seed=999, device=device)
+            record["accuracy"] = evaluate(
+                model, task_cfg, optim["batch_size"], seed=999, device=device
+            )
             if is_mom:
                 with torch.no_grad():
                     eval_ids, _ = make_mqar_batch(

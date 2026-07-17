@@ -1,7 +1,7 @@
 """Routing-mask algebra and output combination (spec §3.4, §3.5).
 
-    m_{t,e} = 1[e ∈ S_t]                     (write-side mask per expert)
-    y_t     = Σ_{e ∈ S_t} g_{t,e} · y_{t,e}  (gated combination)
+m_{t,e} = 1[e ∈ S_t]                     (write-side mask per expert)
+y_t     = Σ_{e ∈ S_t} g_{t,e} · y_{t,e}  (gated combination)
 """
 
 from __future__ import annotations

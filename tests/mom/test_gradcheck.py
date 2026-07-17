@@ -5,13 +5,12 @@ experts, including the masked write path and the stability objectives.
 from __future__ import annotations
 
 import torch
-from torch.autograd import gradcheck
-from torch.func import functional_call
-
 from mom.block import MoMBlock
 from mom.config import MoMConfig
 from mom.losses import mom_auxiliary_loss
 from mom.registry import build_expert
+from torch.autograd import gradcheck
+from torch.func import functional_call
 
 
 def _cfg(**overrides):

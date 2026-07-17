@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
 
 
 @dataclass
@@ -26,6 +25,7 @@ class SABERConfig:
     # Predictor (hardened)
     predictor_ema_decay: float = 0.999
     predictor_max_steps: int = 100000
+    predictor_loss_weight: float = 1.0  # weight of the JEPA-style predictor loss
 
     # Surprise estimator
     surprise_mu_lambda: float = 0.99

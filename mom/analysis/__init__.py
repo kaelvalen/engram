@@ -79,10 +79,14 @@ def generate_report(
     composition = composition_summary(routings)
 
     # §7.5 dynamics (per layer)
-    dynamics = {
-        f"layer{layer}": dynamics_summary(history, layer)
-        for layer in range(len(history[0]["layers"]))
-    } if history else {}
+    dynamics = (
+        {
+            f"layer{layer}": dynamics_summary(history, layer)
+            for layer in range(len(history[0]["layers"]))
+        }
+        if history
+        else {}
+    )
 
     report = {
         "version": REPORT_VERSION,

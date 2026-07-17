@@ -3,9 +3,9 @@ processing it in chunks with carried state. This exercises conv_state +
 SSM/Delta state hand-off and is the property the old indexed-assignment scan
 silently broke.
 
-SWA layers are excluded here because the classification path never streams
-attention (a true KV-cache equivalence test would be separate); SSD/S4D/Delta
-are the genuinely recurrent mixers and must satisfy chunk == full.
+SWA layers stream a KV-cache (see tests/test_swa_streaming.py for the fp64
+SWA-specific suite); the patterns below exercise that cache through the
+backbone state plumbing alongside the recurrent SSD/S4D/Delta mixers.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ def _backbone(pattern, **kw):
         ["s4", "delta"],
         ["s4", "s4", "delta"],
         ["delta", "s4"],
+        ["s4", "swa", "delta"],
+        ["swa", "s4", "delta"],
     ],
 )
 @pytest.mark.parametrize("ssm_kind", ["ssd", "s4d_legacy"])

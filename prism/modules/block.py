@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from prism.layer_tokens import LAYER_TOKENS
 
-from .attention import SWABlock
+from .attention import SWABlock, SWAState
 from .delta import DeltaBlock, DeltaState
 from .s4 import S4Block
 from .ssd import SSDBlock
@@ -60,11 +60,12 @@ class DeltaBlockState(BlockState):
 class SWABlockState(BlockState):
     """State carried by sliding-window attention blocks.
 
-    NOTE: a real KV-cache is not implemented yet; this is a placeholder so the
-    streaming interface stays consistent.
+    ``mixer_state`` is the attention KV-cache (last ``window`` RoPE-applied
+    keys/values + absolute position); ``conv_state`` is always None (SWA
+    blocks have no conv).
     """
 
-    mixer_state: None = None
+    mixer_state: SWAState | None = None
 
 
 @runtime_checkable
@@ -213,7 +214,7 @@ def forward_block(
             mixer_state=new_mixer,  # type: ignore[arg-type]
         )
     elif layer_type == "swa":
-        new_state = SWABlockState(conv_state=new_conv, mixer_state=None)
+        new_state = SWABlockState(conv_state=new_conv, mixer_state=new_mixer)
     else:
         new_state = SSDBlockState(conv_state=new_conv, mixer_state=new_mixer)  # type: ignore[arg-type]
     return x, new_state

@@ -7,7 +7,7 @@ default to the corresponding PRISM block values (§3.2).
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 import yaml
 

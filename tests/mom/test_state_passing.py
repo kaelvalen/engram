@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from mom.config import MoMConfig
 from mom.model import MoMLM
 
@@ -54,9 +53,7 @@ def test_three_way_split_uneven():
         out = m(ids[:, lo:hi], st)
         outs.append(out["logits"])
         st = out["states"]
-    torch.testing.assert_close(
-        torch.cat(outs, dim=1), full["logits"], rtol=1e-9, atol=1e-11
-    )
+    torch.testing.assert_close(torch.cat(outs, dim=1), full["logits"], rtol=1e-9, atol=1e-11)
 
 
 def test_token_by_token_decode_equals_full():
@@ -70,9 +67,7 @@ def test_token_by_token_decode_equals_full():
         out = m(ids[:, t : t + 1], st)
         outs.append(out["logits"])
         st = out["states"]
-    torch.testing.assert_close(
-        torch.cat(outs, dim=1), full["logits"], rtol=1e-9, atol=1e-11
-    )
+    torch.testing.assert_close(torch.cat(outs, dim=1), full["logits"], rtol=1e-9, atol=1e-11)
 
 
 def test_routing_decisions_identical_when_streaming():

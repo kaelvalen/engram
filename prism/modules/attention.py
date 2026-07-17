@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -35,12 +36,38 @@ def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.
 
 
 @functools.lru_cache(maxsize=8)
-def _build_window_mask(T: int, window: int, device: torch.device) -> torch.Tensor:
-    i = torch.arange(T, device=device).unsqueeze(1)
-    j = torch.arange(T, device=device).unsqueeze(0)
+def _build_window_mask(T: int, S: int, window: int, device: torch.device) -> torch.Tensor:
+    """Additive (T, S) causal sliding-window mask for a chunk of T queries whose
+    keys are right-aligned with the chunk: the S keys are the chunk's own T keys
+    preceded by S - T cached predecessors. Query i attends key s iff
+    s <= i + (S - T) (causal) and i + (S - T) - s < window (sliding window).
+    With S == T this is exactly the full-sequence causal window mask.
+    """
+    i = torch.arange(T, device=device).unsqueeze(1) + (S - T)
+    j = torch.arange(S, device=device).unsqueeze(0)
     allowed = (j <= i) & (j > i - window)
-    mask = torch.zeros(T, T, device=device)
+    mask = torch.zeros(T, S, device=device)
     return mask.masked_fill(~allowed, float("-inf"))
+
+
+@dataclass
+class SWAState:
+    """KV-cache state for streaming sliding-window attention.
+
+    Holds the RoPE-applied keys and values of the last `window` tokens seen so
+    far — covering absolute positions [pos - W, pos), where W <= window — plus
+    `pos`, the number of tokens processed (absolute position of the next one).
+    Feeding the state returned by one chunk into the next makes chunked (or
+    token-by-token) decoding exactly equal a single full-sequence forward.
+    Call `detach()` between chunks to cut the autograd graph.
+    """
+
+    k: torch.Tensor  # [B, H, W, Dh] RoPE-applied keys of the last <= window tokens
+    v: torch.Tensor  # [B, H, W, Dh]
+    pos: int  # absolute position offset = number of tokens seen so far
+
+    def detach(self) -> SWAState:
+        return SWAState(k=self.k.detach(), v=self.v.detach(), pos=self.pos)
 
 
 class SlidingWindowAttention(nn.Module):
@@ -63,17 +90,23 @@ class SlidingWindowAttention(nn.Module):
     def _get_rope_cache(self, T: int, head_dim: int, device: torch.device):
         return _build_rope_cache(T, head_dim, device)
 
-    def _get_window_mask(self, T: int, device: torch.device) -> torch.Tensor:
-        return _build_window_mask(T, self.window, device)
+    def empty_state(self, batch_size: int, device, dtype) -> SWAState:
+        """Zero-length cache at position 0 (stream start)."""
+        H, Dh = self.num_heads, self.head_dim
+        return SWAState(
+            k=torch.zeros(batch_size, H, 0, Dh, device=device, dtype=dtype),
+            v=torch.zeros(batch_size, H, 0, Dh, device=device, dtype=dtype),
+            pos=0,
+        )
 
-    def forward(self, x: torch.Tensor, state=None):
-        # KV-cache streaming is not implemented; reject a non-None state to avoid
-        # silent correctness bugs in streaming use cases.
-        if state is not None:
-            raise NotImplementedError(
-                "SlidingWindowAttention does not yet support a KV-cache state. "
-                "Pass state=None for full-sequence classification."
-            )
+    def forward(self, x: torch.Tensor, state: SWAState | None = None):
+        """Prefill/decode with optional KV-cache state (streaming).
+
+        With ``state=None`` this is the original full-sequence path.  With a
+        state, the chunk's queries attend to the cached window of previous
+        RoPE-applied keys/values plus their own causal window — exactly equal
+        to a single full-sequence forward (fp64-tested).
+        """
         B, T, _ = x.shape
         H, Dh = self.num_heads, self.head_dim
         q, k, v = self.qkv(x).split(self.hidden_dim, dim=-1)
@@ -81,18 +114,32 @@ class SlidingWindowAttention(nn.Module):
         k = k.view(B, T, H, Dh).transpose(1, 2)
         v = v.view(B, T, H, Dh).transpose(1, 2)
 
-        cos, sin = self._get_rope_cache(T, Dh, x.device)
-        cos, sin = cos.to(q.dtype), sin.to(q.dtype)
+        pos0 = state.pos if state is not None else 0
+        cos, sin = self._get_rope_cache(pos0 + T, Dh, x.device)
+        cos = cos[pos0 : pos0 + T].to(q.dtype)
+        sin = sin[pos0 : pos0 + T].to(q.dtype)
         q = _apply_rope(q, cos, sin)
         k = _apply_rope(k, cos, sin)
 
-        if T == 1:
-            attn_mask = None  # single query attends to itself only
+        if state is not None:
+            k_all = torch.cat([state.k, k], dim=2)
+            v_all = torch.cat([state.v, v], dim=2)
         else:
-            attn_mask = self._get_window_mask(T, x.device).to(q.dtype)
-        o = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+            k_all, v_all = k, v
+        # Queries need at most window-1 predecessors; drop anything older.
+        k_all = k_all[:, :, -(self.window + T - 1) :]
+        v_all = v_all[:, :, -(self.window + T - 1) :]
+
+        attn_mask = _build_window_mask(T, k_all.shape[2], self.window, x.device).to(q.dtype)
+        o = F.scaled_dot_product_attention(q, k_all, v_all, attn_mask=attn_mask)
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
-        return self.out_proj(o), state
+
+        new_state = SWAState(
+            k=k_all[:, :, -self.window :].contiguous(),
+            v=v_all[:, :, -self.window :].contiguous(),
+            pos=pos0 + T,
+        )
+        return self.out_proj(o), new_state
 
 
 class SWABlock(nn.Module):

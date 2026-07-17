@@ -11,7 +11,6 @@ from __future__ import annotations
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
 from mom.block import MoMBlock
 from mom.config import MoMConfig
 from mom.masking import topk_mask
@@ -41,9 +40,7 @@ def test_gates_always_form_a_simplex(k, mode, seed):
     r = TokenRouter(16, 3, top_k=k, mode=mode, seed=seed)
     out = r(torch.randn(2, 11, 16))
     assert (out.gates >= 0).all()
-    torch.testing.assert_close(
-        out.gates.sum(-1), torch.ones(2, 11), rtol=1e-5, atol=1e-6
-    )
+    torch.testing.assert_close(out.gates.sum(-1), torch.ones(2, 11), rtol=1e-5, atol=1e-6)
     assert (out.mask.sum(-1) == (3 if mode == "uniform" else k)).all()
 
 
@@ -58,9 +55,9 @@ def test_gates_always_form_a_simplex(k, mode, seed):
 def test_mask_idempotent_and_binary(B, T, K, k, seed):
     k = min(k, K)
     g = torch.Generator().manual_seed(seed)
-    idx = torch.stack(
-        [torch.randperm(K, generator=g)[:k] for _ in range(B * T)], dim=0
-    ).view(B, T, k)
+    idx = torch.stack([torch.randperm(K, generator=g)[:k] for _ in range(B * T)], dim=0).view(
+        B, T, k
+    )
     m = topk_mask(idx, K)
     assert set(m.unique().tolist()) <= {0.0, 1.0}
     assert torch.equal(m * m, m)
@@ -133,6 +130,4 @@ def test_state_passing_is_exact_at_any_split(T, split_frac, seed):
     y_full, st_full, _ = block(x)
     y1, st1, _ = block(x[:, :split])
     y2, _, _ = block(x[:, split:], st1)
-    torch.testing.assert_close(
-        torch.cat([y1, y2], dim=1), y_full, rtol=1e-9, atol=1e-11
-    )
+    torch.testing.assert_close(torch.cat([y1, y2], dim=1), y_full, rtol=1e-9, atol=1e-11)
