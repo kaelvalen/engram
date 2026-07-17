@@ -286,10 +286,32 @@ class GatedDeltaRule(nn.Module):
         self,
         x: torch.Tensor,
         state: DeltaState | None = None,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
     ) -> tuple[torch.Tensor, DeltaState]:
+        """GDR prefill/decode.
+
+        Additive MoM flags (§3.4): ``write_mask`` [B, T] masks k, v and β on
+        non-routed steps, so the transition ``(I − β̃ k̃ k̃ᵀ)`` collapses to
+        identity and the write vanishes.  With ``freeze_on_mask`` the α
+        forget gate is additionally neutralised to 1 on a miss, so the state
+        passes through exactly (the spec's α-free GDR semantics; MoM's
+        default for GDR).  Both flags default off, preserving the original
+        behaviour.
+        """
         global _FLA_WARNED
         B, T, _ = x.shape
         q, k, v, alpha, beta, gate = self._project(x)
+
+        if write_mask is not None:
+            m = write_mask.to(k.dtype)
+            m4 = m.unsqueeze(1).unsqueeze(-1)  # [B,1,T,1]
+            k = k * m4
+            v = v * m4
+            beta = beta * m.unsqueeze(1)  # [B,1,T]
+            if freeze_on_mask:
+                ma = m.unsqueeze(1)  # [B,1,T]
+                alpha = torch.where(ma > 0, alpha, torch.ones_like(alpha))
 
         acc_dtype = x.dtype if x.dtype in (torch.float32, torch.float64) else torch.float32
         S0 = (

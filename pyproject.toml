@@ -59,7 +59,7 @@ prism-infer-image = "scripts.infer_image:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["prism*"]
+include = ["prism*", "mom*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

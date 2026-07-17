@@ -50,23 +50,29 @@ def _get_assoc_fn():
     return _ASSOC_FN
 
 
-def _hillis_steele_inplace(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Pure math Hillis-Steele scan; no autograd tracking.
+def _hillis_steele_forward(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """Memory-efficient inclusive scan via recursive doubling.
 
-    Clones the shifted source slices once per level so the in-place writes do
-    not overlap with their own inputs, while avoiding the ``torch.cat``-based
-    doubling of the time dimension that blew up memory on long sequences.
+    Uses two pre-allocated buffers and swaps them at each level, avoiding the
+    per-level source clones that blew up memory on long sequences. Keeps peak
+    memory at ~4x the input size regardless of sequence length.
     """
     T = a.shape[-2]
     A = a.clone()
-    B = b.clone()
+    B_cur = b.clone()
+    B_next = torch.empty_like(B_cur)
+    A_next = torch.empty_like(A)
     shift = 1
     while shift < T:
-        # Update B before A so we still have the current A_cur available.
-        B[..., shift:, :] = A[..., shift:, :] * B[..., :-shift, :].clone() + B[..., shift:, :]
-        A[..., shift:, :] = A[..., shift:, :] * A[..., :-shift, :].clone()
+        # Leading rows (t < shift) are unchanged in this level.
+        B_next[..., :shift, :] = B_cur[..., :shift, :]
+        B_next[..., shift:, :] = A[..., shift:, :] * B_cur[..., :-shift, :] + B_cur[..., shift:, :]
+        A_next[..., :shift, :] = A[..., :shift, :]
+        A_next[..., shift:, :] = A[..., shift:, :] * A[..., :-shift, :]
+        B_cur, B_next = B_next, B_cur
+        A, A_next = A_next, A
         shift *= 2
-    return B
+    return B_cur
 
 
 def seq_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
@@ -81,20 +87,17 @@ def seq_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 class _HillisSteeleScan(torch.autograd.Function):
-    """Custom autograd wrapper around an in-place Hillis-Steele scan.
-
-    The in-place forward is memory-efficient; the backward is another in-place
-    scan over the reversed sequence.
+    """Custom autograd wrapper around a two-buffer Hillis-Steele scan.
 
     Forward:  h_t = a_t h_{t-1} + b_t,   h_0 = 0.
-    Backward: r_s = g_s + a_{s+1} r_{s+1},   r_{T+1} = 0.
-              grad_a_s = r_s · h_{s-1}
-              grad_b_s = r_s
+    Backward: r_t = g_t + a_{t+1} r_{t+1},   r_T = 0.
+              grad_a_t = r_t · h_{t-1}
+              grad_b_t = r_t
     """
 
     @staticmethod
     def forward(ctx, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        h = _hillis_steele_inplace(a, b)
+        h = _hillis_steele_forward(a, b)
         ctx.save_for_backward(a, h)
         return h
 
@@ -110,10 +113,10 @@ class _HillisSteeleScan(torch.autograd.Function):
         coeff_rev = torch.cat([ones, a_rev[..., :-1, :]], dim=-2)
         go_rev = grad_output.flip(-2)
 
-        r_rev = _hillis_steele_inplace(coeff_rev, go_rev)
+        r_rev = _hillis_steele_forward(coeff_rev, go_rev)
         r = r_rev.flip(-2)
 
-        # grad_a_s = r_s * h_{s-1}; prepend zero state for h_0.
+        # grad_a_t = r_t * h_{t-1}; prepend zero state for h_0.
         h_prev = torch.zeros_like(h[..., :1, :])
         if T > 1:
             h_prev = torch.cat([h_prev, h[..., :-1, :]], dim=-2)

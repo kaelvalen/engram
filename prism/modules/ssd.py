@@ -91,7 +91,12 @@ class SSDMixer(nn.Module):
             dtype=torch.float32,
         )
 
-    def _project(self, x: torch.Tensor):
+    def _project(
+        self,
+        x: torch.Tensor,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
+    ):
         B, T, _ = x.shape
         H, P, N = self.num_heads, self.head_dim, self.state_dim
         xv = self.in_proj(x).view(B, T, H, P)
@@ -100,9 +105,24 @@ class SSDMixer(nn.Module):
         dt = F.softplus(self.dt_proj(x))  # [B, T, H] > 0
         a = torch.exp(dt * self._A())  # [B, T, H] decay in (0, 1)
         dBx = (dt.unsqueeze(-1) * xv).unsqueeze(-1) * Bc.unsqueeze(-2)  # [B,T,H,P,N]
+        if write_mask is not None:
+            # MoM (§3.4): zero the write on non-routed steps so the update is
+            # s_t = a_t ⊙ s_{t-1} + 0.  With freeze_on_mask the decay itself is
+            # neutralised on a miss (a_t → 1), freezing the state (D1 ablation
+            # ``decay_on_skip: false``); otherwise decay applies on every step.
+            m = write_mask.to(dBx.dtype)
+            dBx = dBx * m.view(B, T, 1, 1, 1)
+            if freeze_on_mask:
+                a = torch.exp(dt * self._A() * m.view(B, T, 1))
         return xv, Cc, a, dBx
 
-    def _step(self, x_t: torch.Tensor, h: torch.Tensor):
+    def _step(
+        self,
+        x_t: torch.Tensor,
+        h: torch.Tensor,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
+    ):
         """Decode step. x_t: [B, hidden_dim]; h: [B, H, P, N]."""
         B = x_t.shape[0]
         H, P, N = self.num_heads, self.head_dim, self.state_dim
@@ -113,24 +133,44 @@ class SSDMixer(nn.Module):
         a = torch.exp(dt * self._A())  # [B, H]
 
         dBx = (dt.unsqueeze(-1) * xv).unsqueeze(-1) * Bc.unsqueeze(-2)  # [B,H,P,N]
+        if write_mask is not None:
+            m = write_mask.to(dBx.dtype)
+            dBx = dBx * m.view(B, 1, 1, 1)
+            if freeze_on_mask:
+                a = torch.exp(dt * self._A() * m.view(B, 1))
         h = a.unsqueeze(-1).unsqueeze(-1) * h + dBx
         y = (h * Cc.unsqueeze(-2)).sum(-1)  # [B,H,P]
         y = y + self.D.view(1, H, 1) * xv
         return y.reshape(B, self.hidden_dim), h
 
-    def forward(self, x: torch.Tensor, state: torch.Tensor | None = None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        state: torch.Tensor | None = None,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
+    ):
+        """SSD prefill/decode.
+
+        Additive MoM flags (§3.4): ``write_mask`` [B, T] (or [B, 1] at T==1)
+        zeroes the write term on non-routed steps; ``freeze_on_mask`` also
+        neutralises the decay there (state frozen) instead of applying it
+        (spec D1 ``decay_on_skip`` ablation).  Both default off, preserving
+        the original behaviour.
+        """
         B, T, _ = x.shape
         H, P, N = self.num_heads, self.head_dim, self.state_dim
 
         h0 = _acc(state) if state is not None else self.empty_state(B, x.device, x.dtype)
 
         if T == 1:
-            y, h_new = self._step(x[:, 0], h0)
+            m1 = write_mask[:, 0] if write_mask is not None else None
+            y, h_new = self._step(x[:, 0], h0, m1, freeze_on_mask)
             y = y.unsqueeze(1)
             gate = F.silu(self.gate_proj(x))
             return self.out_proj(y * gate), h_new
 
-        xv, Cc, a, dBx = self._project(x)  # dBx: [B,T,H,P,N], a: [B,T,H]
+        xv, Cc, a, dBx = self._project(x, write_mask, freeze_on_mask)
 
         # Arrange for the scan: flatten (B,H,P) as the batch, scan over T.
         # The decay `a` is identical across all N channels (and all P channels),
@@ -163,11 +203,17 @@ class SSDMixer(nn.Module):
         return self.out_proj(y * gate), h_new
 
     # Sequential reference (ground truth for equivalence tests; not on the hot path).
-    def forward_reference(self, x: torch.Tensor, state: torch.Tensor | None = None):
+    def forward_reference(
+        self,
+        x: torch.Tensor,
+        state: torch.Tensor | None = None,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
+    ):
         B, T, _ = x.shape
         H, P, N = self.num_heads, self.head_dim, self.state_dim
         h0 = _acc(state) if state is not None else self.empty_state(B, x.device, x.dtype)
-        xv, Cc, a, dBx = self._project(x)
+        xv, Cc, a, dBx = self._project(x, write_mask, freeze_on_mask)
         a_scan = _acc(
             a.permute(0, 2, 1)
             .reshape(B * H, 1, T, 1)

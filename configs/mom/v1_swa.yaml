@@ -1,0 +1,37 @@
+# mom-v1-swa (spec §4): three-primitive bank {SSD, GDR, SWA} — v2.
+# The SWA expert is scaffolded in mom.registry and raises NotImplementedError
+# when built (§1.4); this config activates in v2.
+experiment: mom-v1-swa
+seeds: [0, 1, 2]
+
+model:
+  kind: mom
+  hidden_dim: 384
+  num_heads: 8
+  num_layers: 8
+  experts: [ssd, gdr, swa]
+  top_k: 1
+  swa_window: 512
+  shared_expert: null
+  decay_on_skip: true
+  gdr_decay_on_skip: false
+  lambda_bal: 1.0e-2
+  lambda_z: 1.0e-3
+
+task:
+  name: mqar
+  vocab_size: 8192
+  num_pairs: 64
+  seq_len: 2048
+
+optim:
+  steps: 10000
+  batch_size: 16
+  lr: 3.0e-4
+  weight_decay: 0.1
+  warmup_frac: 0.03
+  grad_clip: 1.0
+  bf16: true
+
+eval_every: 250
+log_dir: output/mom

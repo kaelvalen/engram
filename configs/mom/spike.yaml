@@ -1,0 +1,36 @@
+# mom-spike (spec §4): 4 layers, d_model 256, {SSD, GDR}, k=1.
+# 2-week viability spike on MQAR. Spike gate (§6.4): ≥ B1 and ≥ max(B2, B3)
+# recall @ 4k context AND final min expert utilization ≥ 10%.
+experiment: mom-spike
+seeds: [0, 1, 2]
+
+model:
+  kind: mom
+  hidden_dim: 256
+  num_heads: 8
+  num_layers: 4
+  experts: [ssd, gdr]
+  top_k: 1
+  shared_expert: null
+  decay_on_skip: true        # D1 default
+  gdr_decay_on_skip: false   # §3.4 exact pass-through on a miss
+  lambda_bal: 1.0e-2
+  lambda_z: 1.0e-3
+
+task:
+  name: mqar
+  vocab_size: 8192
+  num_pairs: 64
+  seq_len: 512
+
+optim:
+  steps: 2000
+  batch_size: 16
+  lr: 3.0e-4
+  weight_decay: 0.1
+  warmup_frac: 0.03
+  grad_clip: 1.0
+  bf16: true
+
+eval_every: 100
+log_dir: output/mom
