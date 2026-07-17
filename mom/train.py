@@ -184,6 +184,12 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
             model, ctx_cfg, optim["batch_size"], seed=999, device=device
         )
     summary["accuracy_by_context"] = accuracy_by_context
+    # Checkpoint for the analysis suite (§7) and later fine-tuning.
+    ckpt_dir = Path(config.get("log_dir", "output/mom")) / config.get("experiment", "run")
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path = ckpt_dir / f"seed{seed}.pt"
+    torch.save({"model_state": model.state_dict(), "config": config}, ckpt_path)
+    summary["checkpoint"] = str(ckpt_path)
     return summary
 
 
