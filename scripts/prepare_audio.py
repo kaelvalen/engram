@@ -88,7 +88,7 @@ def main() -> int:
         import io
 
         import pyarrow.parquet as pq
-        from huggingface_hub import list_repo_files, snapshot_download
+        from huggingface_hub import snapshot_download
 
         print("downloading google/speech_commands parquet (refs/convert/parquet) …", flush=True)
         local = snapshot_download(

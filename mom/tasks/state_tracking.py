@@ -38,7 +38,9 @@ class StateTrackConfig:
 def generator_permutations(cfg: StateTrackConfig) -> torch.Tensor:
     """The fixed (G, N) permutation table (row g maps element e → perms[g, e])."""
     g = torch.Generator().manual_seed(cfg.perm_seed)
-    return torch.stack([torch.randperm(cfg.num_elements, generator=g) for _ in range(cfg.num_generators)])
+    return torch.stack(
+        [torch.randperm(cfg.num_elements, generator=g) for _ in range(cfg.num_generators)]
+    )
 
 
 def make_state_track_batch(

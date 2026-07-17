@@ -151,9 +151,7 @@ class SlidingWindowAttention(nn.Module):
         )
         return self.out_proj(o), new_state
 
-    def _forward_masked(
-        self, x: torch.Tensor, state: SWAState | None, write_mask: torch.Tensor
-    ):
+    def _forward_masked(self, x: torch.Tensor, state: SWAState | None, write_mask: torch.Tensor):
         """MoM §3.4 masked execution: the window slides over the ROUTED
         subsequence only. Non-routed tokens are never written to the KV cache
         and are masked out as keys; their query outputs are computed but
