@@ -48,10 +48,12 @@ def evaluate(model, task_cfg: MQARConfig, batch_size: int, seed: int, device="cp
     ids, labels = make_mqar_batch(task_cfg, batch_size, g, device)
     with torch.no_grad():
         logits = model(ids)["logits"]
-    pred = logits.argmax(-1)
-    scored = labels != -100
+    # logits[t] predicts token t+1: compare against labels shifted by one.
+    pred = logits[:, :-1].argmax(-1)
+    tgt = labels[:, 1:]
+    scored = tgt != -100
     model.train()
-    return float((pred[scored] == labels[scored]).float().mean())
+    return float((pred[scored] == tgt[scored]).float().mean())
 
 
 def _routing_log(routings, prev_indices: list | None) -> tuple[dict, list]:
@@ -150,6 +152,17 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
         "param_report": model.param_report() if hasattr(model, "param_report") else {},
         "wall_time_s": round(time.time() - t0, 2),
     }
+    # Context generalization (spike gate §6.4: recall @ 4k). Evaluated at the
+    # same num_pairs with longer contexts than training.
+    accuracy_by_context = {}
+    for ctx in config.get("eval_contexts", []):
+        ctx_cfg = MQARConfig(
+            vocab_size=task_cfg.vocab_size, num_pairs=task_cfg.num_pairs, seq_len=ctx
+        )
+        accuracy_by_context[str(ctx)] = evaluate(
+            model, ctx_cfg, optim["batch_size"], seed=999, device=device
+        )
+    summary["accuracy_by_context"] = accuracy_by_context
     return summary
 
 

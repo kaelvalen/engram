@@ -189,3 +189,20 @@ def test_evaluate_accuracy_range():
     task = _task_cfg()
     acc = evaluate(model, task, batch_size=4, seed=99)
     assert 0.0 <= acc <= 1.0
+
+
+def test_evaluate_scores_cheating_model_perfectly():
+    """Off-by-one regression: logits[t] predicts token t+1, so a model that
+    places all mass on the correct value AT the query position must score 1.0."""
+    task = _task_cfg()
+    ids, labels = make_mqar_batch(task, 4, torch.Generator().manual_seed(999))
+
+    class CheatModel(torch.nn.Module):
+        def forward(self, ids):
+            logits = torch.full((ids.shape[0], ids.shape[1], task.vocab_size), -10.0)
+            tgt = labels[:, 1:]
+            pos = (tgt != -100).nonzero()
+            logits[pos[:, 0], pos[:, 1] - 1, tgt[tgt != -100]] = 10.0
+            return {"logits": logits}
+
+    assert evaluate(CheatModel(), task, batch_size=4, seed=999) == 1.0

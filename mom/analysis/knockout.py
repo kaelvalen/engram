@@ -14,9 +14,11 @@ import torch
 def mqar_accuracy_metric(model, ids, labels, knockout=None) -> float:
     """Recall accuracy at scored positions, optionally under knockout."""
     out = model(ids, knockout=knockout) if knockout else model(ids)
-    pred = out["logits"].argmax(-1)
-    scored = labels != -100
-    return float((pred[scored] == labels[scored]).float().mean())
+    # logits[t] predicts token t+1: compare against labels shifted by one.
+    pred = out["logits"][:, :-1].argmax(-1)
+    tgt = labels[:, 1:]
+    scored = tgt != -100
+    return float((pred[scored] == tgt[scored]).float().mean())
 
 
 def knockout_evaluation(
