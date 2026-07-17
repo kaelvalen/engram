@@ -255,6 +255,11 @@ class GatedDeltaRule(nn.Module):
         NOT enable in-kernel l2-norm (avoid double normalisation); the op default
         is no in-kernel norm. We keep the kwargs minimal so a signature change
         triggers the caller's graceful fallback rather than a silent miscompute.
+
+        STATE LAYOUT (verified against fla 0.3.2 on GPU): the kernel keeps the
+        transposed convention — its ``initial_state`` is (dk, dv) and its
+        returned final state is (dk, dv) — while our ``DeltaState.S`` is
+        (dv, dk). We therefore transpose S0 in and the result back out.
         """
         fn = _load_fla()
         if fn is None:
@@ -276,12 +281,12 @@ class GatedDeltaRule(nn.Module):
             g,
             bf,
             scale=1.0,
-            initial_state=S0,
+            initial_state=S0.transpose(-1, -2).contiguous(),
             output_final_state=True,
             head_first=False,
         )
         o = o.transpose(1, 2)  # [B,T,H,V] → [B,H,T,V]
-        return o.to(q.dtype), S_new
+        return o.to(q.dtype), S_new.transpose(-1, -2).contiguous()
 
     def forward(
         self,
