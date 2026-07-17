@@ -202,7 +202,8 @@ def test_evaluate_scores_cheating_model_perfectly():
             logits = torch.full((ids.shape[0], ids.shape[1], task.vocab_size), -10.0)
             tgt = labels[:, 1:]
             pos = (tgt != -100).nonzero()
-            logits[pos[:, 0], pos[:, 1] - 1, tgt[tgt != -100]] = 10.0
+            # pred[i] == logits[i].argmax scores tgt[i]: put mass at index i
+            logits[pos[:, 0], pos[:, 1], tgt[tgt != -100]] = 10.0
             return {"logits": logits}
 
     assert evaluate(CheatModel(), task, batch_size=4, seed=999) == 1.0

@@ -41,13 +41,34 @@ def _lr_at(step: int, total: int, base: float, warmup_frac: float) -> float:
     return base * 0.5 * (1 + math.cos(math.pi * t))
 
 
-def evaluate(model, task_cfg: MQARConfig, batch_size: int, seed: int, device="cpu") -> float:
-    """Recall accuracy at scored (post-query) positions on a fixed batch."""
+def evaluate(
+    model,
+    task_cfg: MQARConfig,
+    batch_size: int,
+    seed: int,
+    device="cpu",
+    chunk_len: int = 512,
+) -> float:
+    """Recall accuracy at scored (post-query) positions on a fixed batch.
+
+    Long contexts are evaluated through the streaming state hand-off
+    (chunked ≡ full by the fp64 state-passing tests), bounding peak memory
+    on small GPUs.
+    """
     model.eval()
     g = torch.Generator().manual_seed(seed)
     ids, labels = make_mqar_batch(task_cfg, batch_size, g, device)
     with torch.no_grad():
-        logits = model(ids)["logits"]
+        if ids.shape[1] <= chunk_len:
+            logits = model(ids)["logits"]
+        else:
+            outs = []
+            states = None
+            for lo in range(0, ids.shape[1], chunk_len):
+                out = model(ids[:, lo : lo + chunk_len], states)
+                outs.append(out["logits"])
+                states = out["states"]
+            logits = torch.cat(outs, dim=1)
     # logits[t] predicts token t+1: compare against labels shifted by one.
     pred = logits[:, :-1].argmax(-1)
     tgt = labels[:, 1:]
