@@ -60,14 +60,19 @@ class SWAState:
     Feeding the state returned by one chunk into the next makes chunked (or
     token-by-token) decoding exactly equal a single full-sequence forward.
     Call `detach()` between chunks to cut the autograd graph.
+
+    In the MoM masked execution path (§3.4) the cache instead holds the last
+    `window` *routed* keys/values and `pos` is a per-batch tensor counting
+    routed tokens — the expert's own subsequence time axis.
     """
 
     k: torch.Tensor  # [B, H, W, Dh] RoPE-applied keys of the last <= window tokens
     v: torch.Tensor  # [B, H, W, Dh]
-    pos: int  # absolute position offset = number of tokens seen so far
+    pos: int | torch.Tensor  # tokens seen so far (int; per-batch tensor when masked)
 
     def detach(self) -> SWAState:
-        return SWAState(k=self.k.detach(), v=self.v.detach(), pos=self.pos)
+        pos = self.pos.detach() if isinstance(self.pos, torch.Tensor) else self.pos
+        return SWAState(k=self.k.detach(), v=self.v.detach(), pos=pos)
 
 
 class SlidingWindowAttention(nn.Module):
@@ -99,14 +104,19 @@ class SlidingWindowAttention(nn.Module):
             pos=0,
         )
 
-    def forward(self, x: torch.Tensor, state: SWAState | None = None):
+    def forward(self, x: torch.Tensor, state: SWAState | None = None, write_mask=None):
         """Prefill/decode with optional KV-cache state (streaming).
 
         With ``state=None`` this is the original full-sequence path.  With a
         state, the chunk's queries attend to the cached window of previous
         RoPE-applied keys/values plus their own causal window — exactly equal
         to a single full-sequence forward (fp64-tested).
+
+        ``write_mask`` (MoM §3.4) switches to the masked execution path:
+        the window slides over the routed subsequence only.
         """
+        if write_mask is not None:
+            return self._forward_masked(x, state, write_mask)
         B, T, _ = x.shape
         H, Dh = self.num_heads, self.head_dim
         q, k, v = self.qkv(x).split(self.hidden_dim, dim=-1)
@@ -140,6 +150,92 @@ class SlidingWindowAttention(nn.Module):
             pos=pos0 + T,
         )
         return self.out_proj(o), new_state
+
+    def _forward_masked(
+        self, x: torch.Tensor, state: SWAState | None, write_mask: torch.Tensor
+    ):
+        """MoM §3.4 masked execution: the window slides over the ROUTED
+        subsequence only. Non-routed tokens are never written to the KV cache
+        and are masked out as keys; their query outputs are computed but
+        meaningless (the caller gathers outputs at routed positions only).
+        RoPE positions run along the routed subsequence — the expert's own
+        time axis — so chunked streaming with state hand-off stays exactly
+        equal to a single full-sequence masked forward (fp64-tested).
+        """
+        B, T, _ = x.shape
+        H, Dh, W = self.num_heads, self.head_dim, self.window
+        q, k, v = self.qkv(x).split(self.hidden_dim, dim=-1)
+        q = q.view(B, T, H, Dh).transpose(1, 2)  # [B,H,T,Dh]
+        k = k.view(B, T, H, Dh).transpose(1, 2)
+        v = v.view(B, T, H, Dh).transpose(1, 2)
+
+        m = write_mask.to(x.dtype)  # [B,T] in {0,1}
+        pos_prev = (
+            state.pos.to(x.device)
+            if state is not None
+            else torch.zeros(B, dtype=torch.long, device=x.device)
+        )
+        # Position along the expert's own stream: routed tokens take their
+        # rank; unrouted tokens inherit the most recent routed position (or 0
+        # before the first routed token).
+        q_pos = (pos_prev.unsqueeze(1) + m.long().cumsum(dim=1) - 1).clamp(min=0)  # [B,T]
+
+        cos_full, sin_full = self._get_rope_cache(int(q_pos.max()) + 1, Dh, x.device)
+        cos = cos_full[q_pos].to(q.dtype).unsqueeze(1)  # [B,1,T,Dh]
+        sin = sin_full[q_pos].to(q.dtype).unsqueeze(1)
+        # per-batch RoPE (subsequence positions); _apply_rope expects a shared
+        # [T, Dh] cache, so apply the rotation directly here.
+        q = q * cos + _rotate_half(q) * sin
+        k = k * cos + _rotate_half(k) * sin
+
+        if state is not None and state.k.shape[2] > 0:
+            Wc = state.k.shape[2]
+            valid_len = pos_prev.clamp(max=Wc)  # [B]
+            slot = torch.arange(Wc, device=x.device)
+            cache_valid = slot.unsqueeze(0) >= (Wc - valid_len.unsqueeze(1))  # [B,Wc]
+            # right-aligned cache: slot s (>= Wc - valid_len) holds the routed
+            # key at subsequence position pos_prev - (Wc - s)
+            cache_pos = pos_prev.unsqueeze(1) - Wc + slot.unsqueeze(0)
+            k_all = torch.cat([state.k.to(k.dtype), k], dim=2)
+            v_all = torch.cat([state.v.to(v.dtype), v], dim=2)
+        else:
+            cache_valid = torch.zeros(B, 0, dtype=torch.bool, device=x.device)
+            cache_pos = torch.zeros(B, 0, dtype=torch.long, device=x.device)
+            k_all, v_all = k, v
+
+        key_pos = torch.cat([cache_pos, q_pos], dim=1)  # [B,S]
+        key_valid = torch.cat([cache_valid, m.bool()], dim=1)  # [B,S]
+
+        S = key_pos.shape[1]
+        # Explicit causality in k_all index space: a query may only attend
+        # keys at or before its own position (subsequence-position comparison
+        # alone would let unrouted queries see the *next* routed token, which
+        # shares their q_pos).
+        causal = torch.arange(S, device=x.device).unsqueeze(0) <= (
+            S - T + torch.arange(T, device=x.device)
+        ).unsqueeze(1)  # [T,S]
+        allow = (
+            key_valid.unsqueeze(1)
+            & causal.unsqueeze(0)
+            & (key_pos.unsqueeze(1) <= q_pos.unsqueeze(2))
+            & ((q_pos.unsqueeze(2) - key_pos.unsqueeze(1)) < W)
+        )  # [B,T,S]
+        attn_mask = torch.zeros(B, T, S, device=x.device, dtype=q.dtype)
+        attn_mask = attn_mask.masked_fill(~allow, float("-inf"))
+        o = F.scaled_dot_product_attention(q, k_all, v_all, attn_mask=attn_mask.unsqueeze(1))
+        o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
+
+        # New cache: last W routed keys per batch (contiguous tail per stream).
+        new_k = torch.zeros(B, H, W, Dh, device=x.device, dtype=k_all.dtype)
+        new_v = torch.zeros(B, H, W, Dh, device=x.device, dtype=v_all.dtype)
+        new_pos = pos_prev + m.long().sum(dim=1)
+        for b in range(B):
+            cand = key_valid[b].nonzero().flatten()
+            if cand.numel() > 0:
+                tail = cand[-W:]
+                new_k[b, :, -tail.numel() :] = k_all[b, :, tail]
+                new_v[b, :, -tail.numel() :] = v_all[b, :, tail]
+        return self.out_proj(o), SWAState(k=new_k, v=new_v, pos=new_pos)
 
 
 class SWABlock(nn.Module):

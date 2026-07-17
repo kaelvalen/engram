@@ -20,8 +20,8 @@ MixerState = "torch.Tensor | DeltaState"
 def _detach(state):
     if isinstance(state, torch.Tensor):
         return state.detach()
-    if isinstance(state, DeltaState):
-        return state.detach()
+    if hasattr(state, "detach"):
+        return state.detach()  # DeltaState, SWAState
     raise TypeError(f"unsupported state type: {type(state)!r}")
 
 

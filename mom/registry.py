@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from prism.modules.attention import SlidingWindowAttention, SWAState
 from prism.modules.delta import GatedDeltaRule
 from prism.modules.ssd import SSDMixer
 
@@ -36,7 +37,9 @@ def build_expert(name: str, cfg) -> nn.Module:
             backend=cfg.delta_backend,
         )
     if name == "swa":
-        raise NotImplementedError("SWA expert is scheduled for v2 (spec §1.4)")
+        # v2 expert, activated now that PRISM's SWA has a streaming KV-cache
+        # with the MoM masked-execution semantics (spec §3.4 SWA bullet).
+        return SlidingWindowAttention(cfg.hidden_dim, cfg.num_heads, window=cfg.swa_window)
     raise ValueError(f"unknown expert {name!r}; registered: {EXPERT_NAMES}")
 
 
@@ -60,12 +63,20 @@ def expert_forward(
     if name == "gdr":
         return expert(x, state, write_mask=write_mask, freeze_on_mask=not cfg.gdr_decay_on_skip)
     if name == "swa":
-        raise NotImplementedError("SWA expert is scheduled for v2 (spec §1.4)")
+        # Window slides over the routed subsequence; non-routed tokens are
+        # excluded from the window (pass-through is exact by construction).
+        return expert(x, state, write_mask=write_mask)
     raise ValueError(f"unknown expert {name!r}")
 
 
 def expert_empty_state(name: str, expert: nn.Module, batch_size: int, device, dtype):
     """Zero-initialised streaming state (spec §3.6)."""
+    if name == "swa":
+        return SWAState(
+            k=expert.empty_state(batch_size, device, dtype).k,
+            v=expert.empty_state(batch_size, device, dtype).v,
+            pos=torch.zeros(batch_size, dtype=torch.long, device=device),
+        )
     return expert.empty_state(batch_size, device, dtype)
 
 
