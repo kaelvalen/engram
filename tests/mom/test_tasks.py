@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from mom.tasks.passkey import PasskeyConfig, make_passkey_batch
 from mom.tasks.state_tracking import (
     StateTrackConfig,
     generator_permutations,
     make_state_track_batch,
 )
-
 
 # ---------------------------------------------------------------------------
 # passkey

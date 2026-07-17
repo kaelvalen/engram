@@ -8,7 +8,6 @@ always-on shared expert's state.
 from __future__ import annotations
 
 import torch
-from prism.modules.delta import DeltaState
 
 CONV_KEY = "__conv__"
 SHARED_KEY = "__shared__"

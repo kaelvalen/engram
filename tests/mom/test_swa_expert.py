@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from mom.block import MoMBlock
 from mom.config import MoMConfig
 from mom.reference import sequential_block_reference
-from mom.registry import build_expert, expert_empty_state, expert_forward
-from mom.state import ExpertStateDict
+from mom.registry import build_expert
 
 RTOL = 1e-10
 ATOL = 1e-12
