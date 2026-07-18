@@ -186,11 +186,12 @@ reference ≡ dense-masked forward at `rtol=1e-10`.
 routing does **not** collapse (min utilization 0.184 ≥ 0.10), but the quality
 gate **fails** — MoM recall@4096 = 0.013 vs GDR-only 0.104 (SSD-only 0.000,
 fixed-3:1 0.008). Read: uniform-ish early routing dilutes GDR on pure-recall
-tasks; the registered mitigations (`lambda_bal` sweep, `shared_expert: ssd`)
-are the next experiment. First C2 (specialization) signal is already positive:
-all four layers show significant mutual information between expert choice and
-token class (p = 0.002; layer 1: 0.52 nats). Run logs and checkpoints under
-`output/mom/`.
+tasks. Ablations: `lambda_bal = 0` collapses hard (min util 0.0, R1 confirmed);
+`shared_expert: ssd` keeps utilization healthy and one seed reaches 0.109
+(B3-level) but not yet reliably. First C2 (specialization) signal is already
+positive: all four layers show significant mutual information between expert
+choice and token class (p = 0.002; layer 1: 0.52 nats). Run logs and
+checkpoints under `output/mom/`.
 
 ## Inference
 

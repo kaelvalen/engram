@@ -165,7 +165,11 @@ must equalize it (fewer MoM layers or a smaller `hidden_dim` for baselines).
   min utilization 0.0 on every seed (layers 1–2 go all-GDR, the output layer
   goes all-SSD or all-GDR depending on the seed), and 2/3 seeds fail to learn
   at all (acc 0.029 ± 0.050). Load balancing is load-bearing in v1.
-- `shared_expert: ssd` (3 seeds): _running_.
+- `shared_expert: ssd` (3 seeds): no collapse (min utilization 0.184–0.202)
+  and the best MoM result so far — one seed reaches 0.109 @64 (on par with
+  B3's 0.096–0.117), though 2/3 seeds still fail to learn (acc 0.037 ± 0.063,
+  params 5.79 M). The always-on SSD stabilizes utilization but does not yet
+  close the reliability gap.
 
 **C2 (specialization) first signal is positive:** on the trained spike model,
 every layer shows statistically significant mutual information between expert
