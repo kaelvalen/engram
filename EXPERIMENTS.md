@@ -133,7 +133,46 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
   decays internally. This is the op-level (FLA 0.3.x) convention — the newer
   *layer-level* GatedDeltaNet uses raw projection + A_log/dt_bias + in-kernel gate,
   which is different. Confirm the equivalence test passes on the actual installed
-  FLA version before quoting "FLA-equivalent" in the paper.
+  FLA version before quoting "FLA-equivalent" in the paper. **Status 2026-07-18:
+  PASSES on the RTX 5060 with fla 0.3.2 — the returned final state is the
+  transposed layout (dk, dv); we transpose `initial_state` in and the result
+  back out (see `_forward_fla` docstring).**
 - **Joint single-set-of-weights training** (true "modality-agnostic") is the
   follow-up; the current matrix is "modality-portable" (same arch, separate
   runs). Be explicit about this in the paper.
+
+## MoM spike status (2026-07-18, RTX 5060)
+
+Gate protocol: 3 seeds × 8000 steps, MQAR 8-pairs @ T=64, vocab 512, bf16,
+lr 1e-3 (see `configs/mom/spike.yaml` for the recipe note — the harder sweep
+cells do not reach the MQAR "click" inside this budget on an 8 GB GPU).
+
+| model | recall@64 | recall@4096 | min utilization | params |
+|---|---|---|---|---|
+| **mom** | 0.023 ± 0.014 | 0.013 ± 0.023 | **0.184** | 4.48 M |
+| B1 (fixed 3:1) | 0.039 ± 0.034 | 0.008 ± 0.000 | — | 3.16 M |
+| B2 (SSD-only) | 0.000 | 0.000 | — | 3.16 M |
+| B3 (GDR-only) | 0.096 ± 0.018 | 0.104 ± 0.048 | — | 3.16 M |
+
+**Spike gate (§6.4): FAIL on quality / PASS on no-collapse.** The router does
+not collapse (min utilization 0.184 ≥ 0.10), but MoM trails GDR-only on this
+pure-recall task at this optimization budget. Baseline parameter matching
+(§6.2) is NOT yet honored (mom 4.48 M vs baselines 3.16 M) — the next run
+must equalize it (fewer MoM layers or a smaller `hidden_dim` for baselines).
+
+**Ablations run:**
+- `lambda_bal = 0` (3 seeds): **R1 routing collapse confirmed empirically** —
+  min utilization 0.0 on every seed (layers 1–2 go all-GDR, the output layer
+  goes all-SSD or all-GDR depending on the seed), and 2/3 seeds fail to learn
+  at all (acc 0.029 ± 0.050). Load balancing is load-bearing in v1.
+- `shared_expert: ssd` (3 seeds): _running_.
+
+**C2 (specialization) first signal is positive:** on the trained spike model,
+every layer shows statistically significant mutual information between expert
+choice and MQAR token class (key/value/query/filler) at p = 0.002 (500
+permutations; layer 1: 0.52 nats) — see `output/mom/analysis/seed0/report.json`
+(`scripts/mom_analysis.py`).
+
+**Next experiments:** `lambda_bal ∈ {1e-3, 1e-1}` sweep; longer runs at the
+same recipe (the click was still in progress at 8k steps for MoM); parameter
+matching; passkey + state-tracking suites (tasks implemented, untrained).
