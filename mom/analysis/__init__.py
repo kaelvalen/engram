@@ -78,13 +78,14 @@ def generate_report(
     # §7.4 learned composition vs. 3:1
     composition = composition_summary(routings)
 
-    # §7.5 dynamics (per layer)
+    # §7.5 dynamics (per layer; routing stats exist only on eval records)
+    eval_records = [rec for rec in history if "layers" in rec]
     dynamics = (
         {
-            f"layer{layer}": dynamics_summary(history, layer)
-            for layer in range(len(history[0]["layers"]))
+            f"layer{layer}": dynamics_summary(eval_records, layer)
+            for layer in range(len(eval_records[0]["layers"]))
         }
-        if history
+        if eval_records
         else {}
     )
 
