@@ -5,6 +5,10 @@
 > (PTB-XL), audio, and sequential images. A from-scratch reference
 > implementation with full **numerical-equivalence tests** against the
 > `torch.associative_scan` and FLA Triton kernels.
+>
+> This repo also hosts **MoM** (Mixture of Memory Primitives) under `mom/` —
+> the follow-up architecture that routes every token to a learned memory
+> primitive instead of fixing the SSD:GDR ratio by hand (see below).
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![PyTorch 2.5+](https://img.shields.io/badge/pytorch-2.5%2B-orange)](https://pytorch.org/)
@@ -27,28 +31,49 @@ The backbone interleaves two complementary mixers (plus optional attention):
   primitive Mamba-3 builds on, and the default `ssm_kind="ssd"`.
 - **Gated Delta Rule blocks** — matrix-valued associative memory with
   data-dependent forget/write gates; targeted recall and overwrite.
-- **Sliding-window attention** (optional, `swa`) — for H1-style hybrid
-  ablations, since "some attention" is what carries retrieval in SSM hybrids.
+- **Sliding-window attention** (optional, `swa`) — RoPE attention with a real
+  **streaming KV-cache** (`SWAState`), so chunked/token-by-token decode is
+  bit-exact with the full-sequence forward (fp64-tested). Used for H1-style
+  hybrid ablations and as MoM's third expert.
 
 The per-layer role tokens are defined in `prism.layer_tokens` as `("s4", "delta",
 "swa")`. `prism.modules.block.BLOCK_REGISTRY` maps each token to a builder
 function; new mixers can be registered with `@register_block("token")` without
 changing the core config or model code.
 
-> **Status: architecture implemented and tested; benchmark runs in progress.**
-> 111 tests pass (equivalence, gradcheck, streaming, property-based). The
-> benchmark numbers require GPU + datasets — the locked experiment matrix,
-> primary metric (macro AUROC), and baseline targets are specified in
-> [EXPERIMENTS.md](EXPERIMENTS.md) before any runs complete. Paper skeleton at
+> **Status (2026-07-18): architecture + training validated end-to-end on an
+> RTX 5060 laptop GPU; the full paper matrix is not yet run.**
+> 270+ tests pass (numerical equivalence, fp64 gradcheck, streaming
+> state-passing, property-based). All six PTB-XL task vocabularies are
+> validated against the real `scp_statements.csv` (5/23/44/19/12/71 classes —
+> `scripts/validate_ptbxl_tasks.py`). The locked experiment matrix and honest
+> gaps live in [EXPERIMENTS.md](EXPERIMENTS.md); paper skeleton at
 > [paper/PAPER_DRAFT.md](paper/PAPER_DRAFT.md).
 
 ---
 
+## Pipeline validation (laptop config, RTX 5060 — NOT paper numbers)
+
+Protocol-identical but reduced (`hidden_dim=64, num_layers=4, batch 8`) run on
+PTB-XL super-diag, **2 epochs, 1 seed**, macro-AUROC:
+
+| Config | val macro-AUC |
+|---|---|
+| **PRISM hybrid (SSD+GDR)** | **0.8908** |
+| Gated DeltaNet only | 0.8906 |
+| PRISM legacy (S4D+GDR) | 0.8882 |
+| Mamba-2 only (SSD) | 0.8836 |
+| ResNet1D | 0.8828 |
+| small Transformer | 0.8769 |
+
+Reproduce with `DATA_ROOT=./datasets SEEDS="0" EPOCHS=2 bash scripts/run_benchmarks_laptop.sh`
+then `python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc`.
+Do not quote these as the paper's main results — they are pipeline validation
+at ~250 K params, 1 seed, 2 epochs.
+
 ## Install
 
 ### Option A: Nix + uv (recommended for GPU development)
-
-If you have the [Nix](https://nixos.org/download/) package manager with flakes enabled:
 
 ```bash
 git clone https://github.com/kaelvalen/prism.git
@@ -56,11 +81,10 @@ cd prism
 nix develop
 ```
 
-This gives you a shell with `uv`, the CUDA toolkit, git, and just. Python
-dependencies are installed into a local `.venv` managed by `uv` (declared in
-`pyproject.toml`). The Nix shell does **not** ship a Nix-built PyTorch; instead
-it lets `uv` resolve PyTorch from PyPI against your system NVIDIA driver, which
-keeps fast-moving packages such as `flash-linear-attention` practical to track.
+The dev shell provides `uv`, the CUDA toolkit, git, and just; Python deps are
+installed into a local `.venv` by `uv` (declared in `pyproject.toml`). The
+shell does **not** ship a Nix-built PyTorch — `uv` resolves PyTorch from PyPI
+against your system NVIDIA driver.
 
 ### Option B: pip
 
@@ -74,6 +98,20 @@ pip install -e ".[gpu]"             # optional Triton kernels (FLA, mamba-ssm)
 The pure-PyTorch reference paths run everywhere (no Triton/CUDA needed). The
 `gpu` extra adds the production kernels; everything falls back gracefully if
 they are absent or incompatible with the installed PyTorch/CUDA pair.
+
+### NixOS GPU notes (PyPI wheels on NixOS)
+
+PyPI torch wheels need host libraries that NixOS keeps out of default paths:
+
+- `LD_LIBRARY_PATH` must include the NVIDIA driver libs (`/run/opengl-driver/lib`),
+  a 64-bit `libstdc++.so.6`, and `libz.so.1`.
+- Triton (for `torch.associative_scan` / FLA) calls `/sbin/ldconfig`, which does
+  not exist on NixOS → set `TRITON_LIBCUDA_PATH=/run/opengl-driver/lib`.
+- Triton's host compile needs `Python.h`, which the per-user profile does not
+  expose → point `CPATH` at the store python's `include/python3.x` directory.
+
+Verified working on NixOS + RTX 5060 (torch 2.13+cu130, FLA 0.3.2,
+`tests/test_delta_equivalence.py` passes on GPU).
 
 ## Quickstart
 
@@ -114,11 +152,47 @@ python scripts/bench_throughput.py --device cuda --seq-len 4096
 One command per table row; full matrix, datasets, metric (macro-AUROC) and
 compute budget are in [EXPERIMENTS.md](EXPERIMENTS.md).
 
-## Inference
+**Data prep:** PTB-XL goes under `datasets/ptbxl/` (validated by
+`python scripts/validate_ptbxl_tasks.py`). Speech Commands mel dumps are built
+by `python scripts/prepare_audio.py --source hf` (codec-free path that also
+works behind TLS-intercepting proxies); output goes to `datasets/audio/{train,val}.pt`
+(30,769 train + 7,777 val samples over the 10 core commands) and is consumed by
+`prism/data/audio.get_audio_loaders(synthetic=False)`.
 
-After training, use the per-task inference scripts. Both load the best
-validation checkpoint, run the model on the test fold, and can write a JSON
-report:
+## MoM — Mixture of Memory Primitives (`mom/`)
+
+MoM replaces PRISM's fixed block ratio with a **bank of heterogeneous memory
+experts** (SSD, GDR; SWA scaffolded for v2) and a lightweight **per-token
+router**: for every token, the router selects which memory primitive updates
+its state and produces that token's output. The composition of the backbone
+becomes a learned function of the token stream rather than a hand-tuned
+constant (PRISM's 3:1 is recovered as the special case of a periodic router).
+
+- `mom/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes)
+- `mom/block.py` — MoMBlock: PRISM-exact residual/pre-norm anatomy + expert bank + router
+- `mom/registry.py` — expert registry (`ssd`, `gdr`, `swa`), masked-execution contract
+- `mom/losses.py` — Switch load-balancing + router z-loss (§3.7 stability objectives)
+- `mom/baselines.py` — B1 fixed-3:1 hybrid, B2 SSD-only, B3 GDR-only, B4/B5 frozen routers
+- `mom/tasks/` — MQAR (spike task), passkey, state-tracking probes
+- `mom/analysis/` — §7 suite: routing heatmaps, specialization MI, knockout, composition, dynamics
+- `configs/mom/` — spike / v1 / v1_k2 / v1_swa configs; `scripts/mom_spike_gate.py`, `scripts/mom_analysis.py`
+
+Masked-dense execution (spec §3.4) is exact and fp64-tested: SSD decays on
+every step (D1, `decay_on_skip`), GDR passes its state through exactly on a
+miss, SWA's window slides over the routed subsequence. Sequential token-by-token
+reference ≡ dense-masked forward at `rtol=1e-10`.
+
+**Spike gate (§6.4), RTX 5060, 3 seeds × 8000 steps, MQAR 8-pairs @ T=64:**
+routing does **not** collapse (min utilization 0.184 ≥ 0.10), but the quality
+gate **fails** — MoM recall@4096 = 0.013 vs GDR-only 0.104 (SSD-only 0.000,
+fixed-3:1 0.008). Read: uniform-ish early routing dilutes GDR on pure-recall
+tasks; the registered mitigations (`lambda_bal` sweep, `shared_expert: ssd`)
+are the next experiment. First C2 (specialization) signal is already positive:
+all four layers show significant mutual information between expert choice and
+token class (p = 0.002; layer 1: 0.52 nats). Run logs and checkpoints under
+`output/mom/`.
+
+## Inference
 
 ```bash
 # PTB-XL super-diagnostic (multi-label) or single-label task
@@ -135,14 +209,14 @@ python scripts/infer_image.py \
 
 ## Reproducibility
 
-The trainer supports the standard levers:
-
-- `--seed N` sets Python/NumPy/PyTorch RNGs and, with `--deterministic`, enables
+- `--seed N` sets Python/NumPy/PyTorch RNGs; `--deterministic` enables
   `CUBLAS_WORKSPACE_CONFIG` for deterministic CUDA ops where possible.
 - Checkpoints contain optimizer, scheduler, RNG state, and global step; resume
   with `--resume path/to/last.pt`.
 - `last.pt` is written every epoch; `best.pt` is selected by the validation
   metric (macro-AUROC for ECG tasks, accuracy for image/audio).
+- MoM runs are fully seeded (model init, router, data); identical reruns on the
+  same hardware produce identical routing decisions and metrics.
 
 ## Benchmark numbers
 
@@ -161,7 +235,8 @@ not accuracy. Baseline to match: `xresnet1d101` ≈ **0.928** macro AUC on the
 
 The legacy `0.884` sCIFAR number is from the previous S4D backbone, kept only
 as a historical ablation row; see [EXPERIMENTS.md](EXPERIMENTS.md). All new
-numbers must be **mean ± std over ≥3 seeds**.
+numbers must be **mean ± std over ≥3 seeds**. The 2-epoch laptop-validation
+row above is the current state of the pipeline, not a submission number.
 
 ---
 
@@ -187,43 +262,61 @@ weakness of the original S4D block, and the most important ablation in the
 paper (`ssm_kind="ssd"` vs `"s4d_legacy"`).
 
 **Parallel scan** (`prism/modules/scan.py`) — the recurrence is solved with
-`torch.associative_scan` (fused HOP) or a vectorized Hillis-Steele fallback;
-neither uses strided indexed assignment. The original hand-derived Blelloch
-up/down-sweep is preserved in `scan_reference.py` for teaching and as an
-equivalence anchor.
+`torch.associative_scan` (fused HOP) or a vectorized two-buffer Hillis-Steele
+fallback; neither uses strided indexed assignment. The original hand-derived
+Blelloch up/down-sweep is preserved in `scan_reference.py` for teaching and as
+an equivalence anchor.
 
 **Gated delta rule** (`prism/modules/delta.py`) — `backend="reference"` is the
-from-scratch chunked solve (UT transform via `solve_triangular`);
-`backend="fla"` calls FLA's `chunk_gated_delta_rule` Triton kernel and falls
-back to the reference if FLA/CUDA are unavailable.
+from-scratch chunked solve in the **division-free, log-space decay-ratio form**
+(all coefficients `γ_t/γ_s ≤ 1`): the earlier `1/ᾱ` formulation underflowed to
+inf and NaN'd in fp32 once the forget gate learned `α ≪ 1`. `backend="fla"`
+calls FLA's `chunk_gated_delta_rule` Triton kernel with the correct
+transposed-state mapping ((dk, dv) ↔ (dv, dk)) and falls back to the reference
+if FLA/CUDA are unavailable.
+
+**Sliding-window attention** (`prism/modules/attention.py`) — RoPE, causal
+window, and a streaming KV-cache (`SWAState`: last `window` RoPE-applied
+keys/values + absolute position). Chunked and token-by-token decode are
+fp64-exact with full-sequence forward; the MoM masked path slides the window
+over the routed subsequence only.
 
 ## Backends
 
 | Component | `reference` (default) | production | fallback |
 |---|---|---|---|
 | SSD / S4D scan | Hillis-Steele (`scan_backend="reference"`) | `torch.associative_scan` (`"auto"`/`"assoc"`) + `torch.compile` | automatic to Hillis-Steele if `associative_scan` unavailable |
-| Gated delta rule | pure-PyTorch chunked solve | FLA `chunk_gated_delta_rule` (`delta_backend="fla"`) | automatic to reference if FLA missing, not on CUDA, wrong dtype, or Triton fails |
+| Gated delta rule | pure-PyTorch chunked solve (division-free) | FLA `chunk_gated_delta_rule` (`delta_backend="fla"`) | automatic to reference if FLA missing, not on CUDA, wrong dtype, or Triton fails |
 
 `tests/test_delta_equivalence.py` and `tests/test_scan_equivalence.py` assert
 the production backends are numerically equivalent to the references. The FLA
-case is skipped when the Triton kernel cannot execute on the current
-PyTorch/CUDA/driver combination.
+equivalence test passes on the RTX 5060 with fla 0.3.2 (state-layout mapping
+fixed 2026-07); it is skipped when the Triton kernel cannot execute.
+
+## SABER (`prism/saber/`, experimental)
+
+Surprise-adaptive memory layer under active research: latent encoder →
+capacity-limited GRU policy → EMA predictor → normalized-surprise estimator →
+adaptive budget → sparse slot readout, trained with an InfoNCE bottleneck +
+JEPA-style predictor loss, a 3-phase trainer, and diagnostics/recovery checks
+(R1–R5). Not wired into the benchmark matrix; covered by `tests/test_saber.py`.
 
 ## Testing
 
 ```bash
 # inside nix develop, or with the pip venv activated
-pytest                       # 111 passed, 3 skipped (FLA probe skips when Triton unavailable)
-ruff check prism tests scripts train.py
-ruff format --check prism tests scripts train.py
+pytest                       # 270+ passed, 1 skipped (FLA probe skips when Triton unavailable)
+ruff check prism mom tests scripts train.py
+ruff format --check prism mom tests scripts train.py
 ```
 
-- **Numerical equivalence** — scan backends and delta backends vs sequential/reference ground truth.
-- **Gradcheck** (float64) — scan, SSD mixer, delta rule.
-- **State-passing** — one-shot == chunked-with-carried-state (streaming correctness).
+- **Numerical equivalence** — scan/delta backends vs sequential reference; MoM dense-masked ≡ token-by-token reference at fp64 `rtol=1e-10`.
+- **Gradcheck** (float64) — scan, SSD mixer, delta rule, full MoM block, masked SWA.
+- **State-passing** — one-shot == chunked-with-carried-state for every mixer incl. SWA KV-cache (streaming correctness).
 - **Regression** — seed-locked golden losses.
-- **Property-based** (hypothesis) — finite outputs/loss/grads across random shapes; CPU determinism.
-- **FLA probe** — `tests/test_delta_equivalence.py` runs the FLA Triton kernel on a tiny tensor before declaring the backend available; if it fails (missing Triton, driver mismatch, PyTorch/FLA ABI incompatibility), the test skips and `GatedDeltaRule(backend="fla")` falls back to the reference path.
+- **Property-based** (hypothesis) — finite outputs/loss/grads; gate simplex, mask idempotence, expert-order permutation invariance; CPU determinism.
+- **FLA probe** — `tests/test_delta_equivalence.py` runs the FLA Triton kernel on a tiny tensor before declaring the backend available.
+- **MoM suite** (`tests/mom/`) — routing, losses, masked equivalence, state passing, gradcheck, properties, tasks, training, analysis.
 
 ## Key config flags
 
@@ -238,6 +331,10 @@ ruff format --check prism tests scripts train.py
 | `swa_window` / `--swa-window` | 128 | sliding-window attention span |
 | `compile` / `--compile` | off | `torch.compile` the model in the trainer |
 | `multilabel` / `--ecg-multilabel` | off | PTB-XL multi-label targets + BCE + macro-AUROC selection |
+| `audio_synthetic` / `--audio-synthetic` | on | in-memory audio data; off = real Speech Commands dumps |
+
+MoM flags live in `mom/config.py` (`experts`, `top_k`, `router_mode`,
+`shared_expert`, `decay_on_skip`/`gdr_decay_on_skip`, `lambda_bal`, `lambda_z`).
 
 ---
 
@@ -252,19 +349,27 @@ prism/
 ├── modules/
 │   ├── ssd.py                # SSDMixer / SSDBlock  (Mamba-2 SSD, per-channel)
 │   ├── s4.py                 # legacy S4D-Complex (ablation), parallel_scan wrapper
-│   ├── delta.py              # GatedDeltaRule (reference + FLA backends)
-│   ├── attention.py          # SlidingWindowAttention / SWABlock (RoPE)
-│   ├── scan.py               # associative_scan + Hillis-Steele scan backends
+│   ├── delta.py              # GatedDeltaRule (division-free reference + FLA backends)
+│   ├── attention.py          # SlidingWindowAttention / SWABlock (RoPE, KV-cache)
+│   ├── scan.py               # associative_scan + two-buffer Hillis-Steele backends
 │   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
 │   └── block.py              # BLOCK_REGISTRY + PRISMBlock protocol + build_block dispatch
+├── saber/                    # experimental surprise-adaptive memory layer (R&D)
 ├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
 ├── baselines/                # ResNet1D, small Transformer
-└── data/                     # ecg / image / audio loaders
+└── data/                     # ecg / image / audio loaders (+ pure ptbxl_tasks mapping)
+mom/                          # Mixture of Memory Primitives (see MoM section)
+├── router.py masking.py block.py losses.py state.py registry.py config.py
+├── model.py baselines.py reference.py train.py
+├── tasks/                    # mqar.py, passkey.py, state_tracking.py
+└── analysis/                 # heatmaps, specialization, knockout, composition, dynamics
+configs/mom/                  # spike.yaml, v1.yaml, v1_k2.yaml, v1_swa.yaml
 EXPERIMENTS.md                # locked benchmark matrix + honest gaps
 paper/PAPER_DRAFT.md          # 4-page workshop manuscript skeleton
-scripts/                      # run_benchmarks.sh, bench_throughput.py, aggregate_results.py,
-                              # infer_ecg.py, infer_image.py
-tests/                        # pytest suite
+scripts/                      # run_benchmarks*.sh, bench_throughput.py, aggregate_results.py,
+                              # infer_ecg.py, infer_image.py, validate_ptbxl_tasks.py,
+                              # prepare_audio.py, mom_spike_gate.py, mom_analysis.py
+tests/                        # pytest suite (+ tests/mom/, test_saber.py, test_swa_streaming.py)
 ```
 
 ## Honest scope
@@ -274,8 +379,10 @@ training run per modality), not yet a single-set-of-weights joint model — that
 true "modality-agnostic" result is the follow-up. The architecture is grounded
 in the 2024–2026 frontier (Mamba-2/3, Gated DeltaNet, FLA); the from-scratch
 reference implementations and their equivalence tests are the contribution
-alongside the cross-modal portability study. See [EXPERIMENTS.md](EXPERIMENTS.md)
-for what still needs doing before submission.
+alongside the cross-modal portability study. MoM additionally treats the
+*composition* of memory primitives as a learned, input-dependent decision
+rather than a design constant. See [EXPERIMENTS.md](EXPERIMENTS.md) for what
+still needs doing before submission.
 
 ## Citation
 
