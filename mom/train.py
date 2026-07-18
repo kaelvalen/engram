@@ -53,27 +53,27 @@ def evaluate(
 
     Long contexts are evaluated through the streaming state hand-off
     (chunked ≡ full by the fp64 state-passing tests), bounding peak memory
-    on small GPUs.  The eval batch is additionally capped so that
-    batch × context ≤ 16k tokens (the training allocator cache is still
-    resident during evaluation); chunks shrink to 256 beyond 1k context to
-    keep the Hillis-Steele fallback's 4× buffers small.
+    on small GPUs.  The eval batch is capped so the SSD scan stays small:
+    batch × chunk ≤ 512 (≈8 M scan elements ≈ 32 MB per Hillis-Steele
+    buffer), and chunks shrink to 256 beyond 1k context.
     """
     model.eval()
     g = torch.Generator().manual_seed(seed)
-    eval_batch = max(1, min(batch_size, 16384 // task_cfg.seq_len))
+    chunk = min(chunk_len, task_cfg.seq_len)
     if task_cfg.seq_len > 1024:
-        chunk_len = min(chunk_len, 256)
+        chunk = min(chunk, 256)
+    eval_batch = max(1, min(batch_size, max(1, 512 // chunk)))
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
     ids, labels = make_mqar_batch(task_cfg, eval_batch, g, device)
     with torch.no_grad():
-        if ids.shape[1] <= chunk_len:
+        if ids.shape[1] <= chunk:
             logits = model(ids)["logits"]
         else:
             outs = []
             states = None
-            for lo in range(0, ids.shape[1], chunk_len):
-                out = model(ids[:, lo : lo + chunk_len], states)
+            for lo in range(0, ids.shape[1], chunk):
+                out = model(ids[:, lo : lo + chunk], states)
                 outs.append(out["logits"])
                 states = out["states"]
             logits = torch.cat(outs, dim=1)
