@@ -47,6 +47,8 @@ class MoMBlock(nn.Module):
             mode=cfg.router_mode,
             seed=cfg.router_seed + 1000 * layer_idx,
             surprise_scale=cfg.router_surprise_scale,
+            surprise_weight_init=cfg.router_surprise_weight,
+            freeze_surprise_weight=cfg.freeze_surprise_weight,
         )
         self.experts = nn.ModuleDict({name: build_expert(name, cfg) for name in cfg.experts})
         self.shared = build_expert(cfg.shared_expert, cfg) if cfg.shared_expert else None

@@ -62,12 +62,19 @@ class TokenRouter(nn.Module):
         mode: str = "learned",
         seed: int = 0,
         surprise_scale: float = 0.0,
+        surprise_weight_init: tuple[float, ...] | None = None,
+        freeze_surprise_weight: bool = False,
     ):
         super().__init__()
         if not 1 <= top_k <= num_experts:
             raise ValueError(f"top_k must be in [1, {num_experts}], got {top_k}")
         if mode not in ("learned", "uniform", "random"):
             raise ValueError(f"unknown router mode: {mode!r}")
+        if surprise_weight_init is not None and len(surprise_weight_init) != num_experts:
+            raise ValueError(
+                f"surprise_weight_init must have length num_experts={num_experts}, "
+                f"got {len(surprise_weight_init)}"
+            )
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.top_k = top_k
@@ -85,8 +92,13 @@ class TokenRouter(nn.Module):
         # the gate path carries no task gradient); frozen + swept for the
         # fixed-scale probe stage of the experiment.
         self.surprise_weight = nn.Parameter(torch.zeros(num_experts))
-        if mode != "learned":
-            self.surprise_weight.requires_grad_(False)  # frozen routers (B4/B5)
+        if surprise_weight_init is not None:
+            with torch.no_grad():
+                self.surprise_weight.copy_(torch.tensor(surprise_weight_init, dtype=torch.float32))
+        if mode != "learned" or freeze_surprise_weight:
+            # Frozen (B4/B5, or the fixed-scale Stage-0 probe sweep).
+            self.surprise_weight.requires_grad_(False)
+        self.freeze_surprise_weight = freeze_surprise_weight
 
         self.weight = nn.Parameter(torch.zeros(num_experts, hidden_dim))
         if mode == "learned":

@@ -182,3 +182,34 @@ def test_model_does_not_compute_pred_loss_in_eval():
     ids = torch.randint(0, 16, (2, 8))
     out = model(ids)
     assert out["pred_loss"].item() == 0.0  # gated on self.training
+
+
+def test_config_loads_and_freezes_surprise_weight():
+    """Stage-0 probe wiring: config sets the per-expert weight and freezes it."""
+    cfg = MoMConfig(
+        hidden_dim=16,
+        num_heads=2,
+        num_layers=1,
+        ssd_state_dim=8,
+        delta_chunk_size=4,
+        scan_backend="reference",
+        router_surprise_scale=1.0,
+        router_surprise_weight=(1.0, -1.0),
+        freeze_surprise_weight=True,
+    )
+    block = MoMBlock(cfg, 0)
+    w = block.router.surprise_weight
+    assert torch.allclose(w.detach(), torch.tensor([1.0, -1.0]))
+    assert not w.requires_grad  # frozen for the probe
+
+
+def test_config_surprise_weight_length_mismatch_raises():
+    import pytest
+
+    with pytest.raises(ValueError):
+        MoMConfig(
+            hidden_dim=16,
+            num_heads=2,
+            num_layers=1,
+            router_surprise_weight=(1.0,),  # 1 != num_experts=2
+        )

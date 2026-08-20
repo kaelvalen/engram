@@ -32,6 +32,8 @@ class MoMConfig:
     router_seed: int = 0  # generator seed for router_mode="random"
     straight_through: bool = False  # ST gate estimator, R4 fallback
     router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
+    router_surprise_weight: tuple[float, ...] | None = None  # per-expert init (None=zeros)
+    freeze_surprise_weight: bool = False  # Stage-0 probe: freeze surprise_weight
     use_surprise_predictor: bool = False  # per-layer SurprisePredictor (design (b))
     surprise_pred_loss_weight: float = 0.0  # aux MSE weight on predictor (per layer)
 
@@ -84,6 +86,14 @@ class MoMConfig:
             raise ValueError("loss weights must be non-negative")
         if self.router_surprise_scale < 0:
             raise ValueError("router_surprise_scale must be non-negative")
+        if (
+            self.router_surprise_weight is not None
+            and len(self.router_surprise_weight) != self.num_experts
+        ):
+            raise ValueError(
+                f"router_surprise_weight must have length num_experts={self.num_experts}, "
+                f"got {len(self.router_surprise_weight)}"
+            )
         if self.surprise_pred_loss_weight < 0:
             raise ValueError("surprise_pred_loss_weight must be non-negative")
         if not (0 < self.s4_dt_min < self.s4_dt_max):
