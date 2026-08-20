@@ -1,100 +1,85 @@
-"""Lightweight causal standalone surprise predictor (spec §7.2, option (b)).
+"""Lightweight standalone surprise predictor — per-layer, local (design
+decision (b), EXPERIMENTS.md "wiring decision"). Unlike SABER's full
+pipeline (LatentEncoder -> EMA Predictor -> SurpriseEstimator on encoded
+z_t), this predicts each MoMBlock's own raw pre-norm hidden stream x_t
+directly from x_{t-1} -- single forward pass, no cross-layer dependency,
+no cycle.
 
-Layer-local: one ``HiddenSurprisePredictor`` lives inside each ``MoMBlock`` and
-predicts that block's *own input* hidden stream ``x`` from its past —
-``ĥ_t = P(x_{t-1})`` — producing a normalized per-token ``surprise`` fed only to
-that block's router. Acyclic and single-pass: surprise uses only ``x``, which is
-already causally produced before the router runs in the same forward.
+    x_hat_t = P_ema(x_{t-1})           # shift-by-one, causal by construction
+    surprise_t = clamp((|x_t - x_hat_t|.mean(-1) - mu) / (sigma.sqrt()+eps), 0, max)
 
-No LatentEncoder; mirrors the EMA-baseline pattern of
-``engram.saber.saber.Predictor`` (stable EMA shadow, online weights train toward
-the target via an MSE ``pred_loss``) and the running-statistics normalization of
-``engram.saber.saber.SurpriseEstimator``.
+Same normalization scheme as SABER's SurpriseEstimator (running mu/sigma),
+reused for consistency -- computed from raw h instead of encoded z.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import copy
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
-@dataclass
-class SurprisePredictorConfig:
-    hidden_dim: int
-    predictor_hidden_dim: int = 64  # small MLP capacity
-    ema_decay: float = 0.999  # stable-baseline lag
-    surprise_mu_lambda: float = 0.99  # running-mean decay
-    surprise_sigma_lambda: float = 0.99  # running-var decay
-    surprise_eps_min: float = 1e-6
-    surprise_eps_scale: float = 1.0
-    surprise_max: float = 3.0
-
-
-class HiddenSurprisePredictor(nn.Module):
-    """ĥ_t = P(x_{t-1}); surprise = normalized |x_t − ĥ_t| (EMA baseline)."""
-
-    def __init__(self, cfg: SurprisePredictorConfig):
+class SurprisePredictor(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        predictor_hidden_dim: int | None = None,
+        ema_decay: float = 0.99,
+        surprise_max: float = 5.0,
+        eps: float = 1e-6,
+    ):
         super().__init__()
-        self.cfg = cfg
-        # Online predictor, strictly past-only input.
-        self.predictor = nn.Sequential(
-            nn.Linear(cfg.hidden_dim, cfg.predictor_hidden_dim),
+        self.hidden_dim = hidden_dim
+        self.ema_decay = ema_decay
+        self.surprise_max = surprise_max
+        self.eps = eps
+        ph = max(1, hidden_dim // 4) if predictor_hidden_dim is None else predictor_hidden_dim
+        # Online predictor; its EMA copy is the stable surprise baseline.
+        self.online = nn.Sequential(
+            nn.Linear(hidden_dim, ph),
             nn.GELU(),
-            nn.Linear(cfg.predictor_hidden_dim, cfg.hidden_dim),
+            nn.Linear(ph, hidden_dim),
         )
-        # EMA shadows of all online predictor params: [w1, b1, w2, b2].
-        # The stable surprise baseline; never updated by backprop.
-        self._ema_shadows = [p.detach().clone() for p in self.predictor.parameters()]
-        # Running surprise statistics, updated ONLY in training mode.
+        self.ema = copy.deepcopy(self.online)
+        for p in self.ema.parameters():
+            p.requires_grad_(False)
+        # Running surprise statistics (SABER SurpriseEstimator scheme).
         self.register_buffer("mu", torch.zeros(1))
         self.register_buffer("sigma", torch.ones(1))
 
     @torch.no_grad()
     def update_ema(self):
-        """Blend online params into their EMA shadows (stable baseline)."""
-        ema = self.cfg.ema_decay
-        for shadow, p in zip(self._ema_shadows, self.predictor.parameters()):
-            shadow.mul_(ema).add_(p.data, alpha=1 - ema)
+        """Standard param EMA step; call after optimizer.step()."""
+        for e, o in zip(self.ema.parameters(), self.online.parameters()):
+            e.mul_(self.ema_decay).add_(o.data, alpha=1 - self.ema_decay)
 
-    def _predict_with_ema(self, x_prev: torch.Tensor) -> torch.Tensor:
-        """Forward with the EMA-shadowed weights: the stable, detached baseline."""
-        w1, b1, w2, b2 = self._ema_shadows
-        h = F.gelu(F.linear(x_prev, w1, b1))
-        return F.linear(h, w2, b2)
+    def _shift(self, x: torch.Tensor) -> torch.Tensor:
+        """x_prev_t = x_{t-1}; position 0 zero-padded (predicts from <start>)."""
+        return torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], dim=1)
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict]:
-        """x: [B, T, D] this block's own input hidden stream.
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: [B, T, D]; returns surprise [B, T] from the EMA (stable) baseline.
 
-        Returns (surprise [B, T], aux with x_hat and pred_loss).
+        Running mu/sigma update only in training mode; the EMA baseline is
+        detached, so surprise never backprops into the predictor here (it is a
+        diagnostic feature, not a trainable head on this path).
         """
-        # Causal shift: pred_t uses x_{t-1}; t=0 predicts from zeros (<start>).
-        x_prev = torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], dim=1)
-
-        x_hat = self._predict_with_ema(x_prev)  # stable EMA baseline
+        x_prev = self._shift(x)
+        x_hat = self.ema(x_prev)  # stable baseline, requires_grad=False
         abs_diff = (x - x_hat).abs().mean(dim=-1)  # [B, T]
-
         if self.training:
             with torch.no_grad():
-                self.mu.mul_(self.cfg.surprise_mu_lambda).add_(
-                    abs_diff.mean(), alpha=1 - self.cfg.surprise_mu_lambda
-                )
+                self.mu.mul_(0.99).add_(abs_diff.mean(), alpha=0.01)
                 centered = abs_diff - self.mu
-                self.sigma.mul_(self.cfg.surprise_sigma_lambda).add_(
-                    (centered**2).mean(), alpha=1 - self.cfg.surprise_sigma_lambda
-                )
-
-        eps = torch.clamp(
-            self.cfg.surprise_eps_scale * self.sigma.sqrt(), min=self.cfg.surprise_eps_min
+                self.sigma.mul_(0.99).add_((centered**2).mean(), alpha=0.01)
+        surprise = ((abs_diff - self.mu) / (self.sigma.sqrt() + self.eps)).clamp(
+            0, self.surprise_max
         )
-        surprise = ((abs_diff - self.mu) / (self.sigma.sqrt() + eps)).clamp(
-            0, self.cfg.surprise_max
-        )
+        return surprise
 
-        # Online predictor learns toward the target (stop-grad target, JEPA-style).
-        pred_online = self.predictor(x_prev)
-        pred_loss = F.mse_loss(pred_online, x.detach())
-
-        return surprise, {"x_hat": x_hat, "pred_loss": pred_loss}
+    def predict_online(self, x: torch.Tensor) -> torch.Tensor:
+        """Online predictor output — separate path for the aux MSE training loss,
+        kept apart from forward() so surprise is always read from the EMA copy.
+        """
+        return self.online(self._shift(x))

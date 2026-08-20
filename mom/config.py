@@ -32,6 +32,7 @@ class MoMConfig:
     router_seed: int = 0  # generator seed for router_mode="random"
     straight_through: bool = False  # ST gate estimator, R4 fallback
     router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
+    use_surprise_predictor: bool = False  # per-layer SurprisePredictor (design (b))
 
     # Shared expert (§3.7): one SSD instance always on, output added ungated.
     shared_expert: str | None = None  # None | "ssd"

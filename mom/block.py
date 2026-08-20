@@ -25,6 +25,7 @@ from .masking import combine_expert_outputs
 from .registry import build_expert, expert_empty_state, expert_forward
 from .router import RoutingOutput, TokenRouter
 from .state import CONV_KEY, SHARED_KEY, ExpertStateDict
+from .surprise import SurprisePredictor
 
 
 class MoMBlock(nn.Module):
@@ -49,6 +50,11 @@ class MoMBlock(nn.Module):
         )
         self.experts = nn.ModuleDict({name: build_expert(name, cfg) for name in cfg.experts})
         self.shared = build_expert(cfg.shared_expert, cfg) if cfg.shared_expert else None
+        # Layer-local surprise predictor (design (b)): predicts this block's own
+        # input; off by default (cfg.use_surprise_predictor).
+        self.surprise_predictor = (
+            SurprisePredictor(cfg.hidden_dim) if cfg.use_surprise_predictor else None
+        )
         self.norm2 = RMSNorm(cfg.hidden_dim)
         self.ffn = SwiGLU(cfg.hidden_dim, cfg.ffn_expand)
         self.dropout = nn.Dropout(cfg.dropout) if cfg.dropout > 0.0 else nn.Identity()
@@ -78,6 +84,10 @@ class MoMBlock(nn.Module):
             drop_idx = {names.index(n) for n in exclude}
 
         r = x
+        # Surprise source: an explicit external `surprise` overrides; otherwise the
+        # layer-local predictor (if enabled) generates it from this block's input.
+        if surprise is None and self.surprise_predictor is not None:
+            surprise = self.surprise_predictor(x)
         routing = self.router(
             x, exclude=drop_idx, surprise=surprise
         )  # h_t = pre-norm stream (§3.3)

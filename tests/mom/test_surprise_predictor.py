@@ -1,112 +1,137 @@
-"""Causality / leakage tests for the layer-local HiddenSurprisePredictor (§7.3).
+"""Causality / leakage + wiring tests for the layer-local SurprisePredictor.
 
 The predictor is strictly time-causal: ``surprise_t`` is a deterministic function
 of ``x_{t-1}, x_t`` (in eval mode, where the running mu/sigma buffers are frozen).
-These tests prove no future information leaks into ``surprise_t`` and that the
-online/EMA separation works. Pure unit tests, no GPU required.
+These tests prove no future information leaks into ``surprise_t``, that the
+online/EMA separation holds, and that MoMBlock wires the layer-local predictor in
+(design (b)) with the external ``surprise`` argument acting as an override.
+Pure unit tests, no GPU required.
 """
 
 import torch
-from mom.surprise import HiddenSurprisePredictor, SurprisePredictorConfig
+import torch.nn.functional as F
+from mom.block import MoMBlock
+from mom.config import MoMConfig
+from mom.surprise import SurprisePredictor
 
 
-def _cfg(hidden_dim=16):
-    return SurprisePredictorConfig(hidden_dim=hidden_dim)
-
-
-def test_no_future_leakage():
-    """Perturbing strictly-future positions must not change surprise[:, :t0]."""
-    p = HiddenSurprisePredictor(_cfg())
-    p.eval()
+def test_no_leakage_from_future():
+    pred = SurprisePredictor(hidden_dim=16).eval()
     torch.manual_seed(0)
     x = torch.randn(2, 10, 16)
-    surp_full, _ = p(x)
-
-    x_bad = x.clone()
-    x_bad[:, 5:] += 1.0  # perturb strictly-future tokens
-    surp_bad, _ = p(x_bad)
-
-    # future selection (indices 0..4) is untouched
-    assert torch.equal(surp_full[:, :5], surp_bad[:, :5])
-    # positions that see the perturbation do change
-    assert not torch.equal(surp_full[:, 5:], surp_bad[:, 5:])
+    s1 = pred(x)
+    x2 = x.clone()
+    x2[:, 5:, :] = torch.randn_like(x2[:, 5:, :])  # perturb t>=5 only
+    s2 = pred(x2)
+    assert torch.allclose(s1[:, :5], s2[:, :5], atol=1e-6)  # t<5 unaffected
+    assert not torch.allclose(s1[:, 5:], s2[:, 5:])
 
 
 def test_strict_shift_causality():
-    """Changing x_t changes surprise_t (and surprise_{t+1} via pred), but not
-    surprise_{t-1}; pred at t uses only x_{t-1}."""
-    p = HiddenSurprisePredictor(_cfg())
-    p.eval()
+    """Changing x_t changes surprise_t (+1 via pred), never the past."""
+    pred = SurprisePredictor(hidden_dim=16).eval()
     torch.manual_seed(0)
     x = torch.randn(1, 6, 16)
-    s0, _ = p(x)
-
+    s0 = pred(x)
     x_mod = x.clone()
-    x_mod[:, 3] += 5.0  # perturb position 3
-    s1, _ = p(x_mod)
-
-    # positions strictly before the changed token are identical
-    assert torch.equal(s0[0, :3], s1[0, :3])
-    # surprise at t=3 uses x_3 -> changes
-    assert (s0[0, 3] != s1[0, 3]).item()
-    # surprise at t=4 predicts from x_3 -> also changes
-    assert (s0[0, 4] != s1[0, 4]).item()
+    x_mod[:, 3] += 5.0
+    s1 = pred(x_mod)
+    assert torch.equal(s0[0, :3], s1[0, :3])  # strictly past: identical
+    assert (s0[0, 3] != s1[0, 3]).item()  # uses x_3
+    assert (s0[0, 4] != s1[0, 4]).item()  # predicts from x_3
 
 
 def test_shape_and_range():
-    cfg = _cfg()
-    p = HiddenSurprisePredictor(cfg)
-    p.eval()
+    pred = SurprisePredictor(hidden_dim=16, surprise_max=5.0).eval()
     x = torch.randn(3, 7, 16)
-    surp, aux = p(x)
+    surp = pred(x)
     assert tuple(surp.shape) == (3, 7)
     assert torch.isfinite(surp).all()
-    assert surp.min() >= 0
-    assert surp.max() <= cfg.surprise_max
-    assert tuple(aux["x_hat"].shape) == tuple(x.shape)
+    assert surp.min() >= 0 and surp.max() <= 5.0
 
 
-def test_eval_determinism():
-    """Eval mode must not update the running stat buffers (deterministic)."""
-    p = HiddenSurprisePredictor(_cfg())
-    p.eval()
+def test_eval_determinism_and_frozen_buffers():
+    pred = SurprisePredictor(hidden_dim=16).eval()
     x = torch.randn(2, 5, 16)
-    s1, _ = p(x)
-    s2, _ = p(x)
+    s1 = pred(x)
+    s2 = pred(x)
     assert torch.equal(s1, s2)
-    # buffers must be exactly their init values (untouched in eval)
-    assert p.mu.item() == 0.0 and p.sigma.item() == 1.0
+    assert pred.mu.item() == 0.0 and pred.sigma.item() == 1.0  # untouched in eval
 
 
 def test_training_updates_stat_buffers():
-    p = HiddenSurprisePredictor(_cfg())
-    p.train()
+    pred = SurprisePredictor(hidden_dim=16).train()
     torch.manual_seed(0)
-    x = torch.randn(2, 5, 16)
-    p(x)
-    assert p.mu.item() != 0.0  # running mean moved off the init value
+    pred(torch.randn(2, 5, 16))
+    assert pred.mu.item() != 0.0  # running mean moved off init
 
 
-def test_pred_loss_trains_online_but_not_ema():
-    """pred_loss backprops to the online predictor, never to the EMA shadows."""
-    p = HiddenSurprisePredictor(_cfg(hidden_dim=8))
-    p.train()
+def test_predict_online_trains_online_but_not_ema():
+    """Aux MSE on predict_online backprops to online, never to the EMA copy."""
+    pred = SurprisePredictor(hidden_dim=8).train()
+    torch.manual_seed(0)
     x = torch.randn(2, 6, 8)
-    _, aux = p(x)
-    aux["pred_loss"].backward()
-    for name, prm in p.predictor.named_parameters():
+    target = x.detach()
+    loss = F.mse_loss(pred.predict_online(x), target)
+    loss.backward()
+    for name, prm in pred.online.named_parameters():
         assert prm.grad is not None and prm.grad.abs().sum() > 0, name
-    for sh in p._ema_shadows:
-        assert sh.grad is None  # detached stable baseline, no grad
+    for prm in pred.ema.parameters():
+        assert prm.grad is None  # stable detached baseline
 
 
-def test_update_ema_blends_shadows():
-    p = HiddenSurprisePredictor(_cfg())
-    before = [sh.clone() for sh in p._ema_shadows]
-    # move online weights away so the blend has an effect
+def test_update_ema_blends():
+    pred = SurprisePredictor(hidden_dim=16)
+    before = [sh.clone() for sh in pred.ema.parameters()]
     with torch.no_grad():
-        for prm in p.predictor.parameters():
+        for prm in pred.online.parameters():
             prm.add_(0.1)
-    p.update_ema()
-    moved = any(not torch.equal(a, b) for a, b in zip(before, p._ema_shadows))
-    assert moved
+    pred.update_ema()
+    assert any(not torch.equal(a, b) for a, b in zip(before, pred.ema.parameters()))
+
+
+def test_surprise_forward_does_not_backprop_into_ema_baseline():
+    """forward() reads surprise solely from the detached EMA baseline."""
+    pred = SurprisePredictor(hidden_dim=8)
+    x = torch.randn(2, 5, 8, requires_grad=True)
+    surp = pred(x)  # uses self.ema(x_prev) only; no online params involved
+    surp.sum().backward()
+    for prm in pred.online.parameters():
+        assert prm.grad is None
+    assert x.grad is not None  # surprise is differentiable w.r.t. x
+
+
+def _block_cfg(use_predictor: bool):
+    return MoMConfig(
+        hidden_dim=16,
+        num_heads=2,
+        num_layers=1,
+        ssd_state_dim=8,
+        delta_chunk_size=4,
+        scan_backend="reference",
+        use_surprise_predictor=use_predictor,
+        router_surprise_scale=1.0,
+    )
+
+
+def test_block_predictor_present_when_enabled():
+    assert MoMBlock(_block_cfg(True), 0).surprise_predictor is not None
+    assert MoMBlock(_block_cfg(False), 0).surprise_predictor is None
+
+
+def test_block_wiring_runs_with_internal_predictor_and_override_wins():
+    torch.manual_seed(0)
+    block = MoMBlock(_block_cfg(True), 0).eval()
+    with torch.no_grad():
+        block.router.surprise_weight.copy_(torch.tensor([1.0, -1.0]))
+    x = torch.randn(2, 8, 16)
+    # internal predictor drives routing (no external surprise given)
+    y_in, _, rout_in = block(x)
+    assert torch.isfinite(y_in).all() and rout_in.indices.shape == (2, 8, 1)
+    # an explicit external surprise overrides the internal predictor. If the
+    # external arg were ignored, both calls would use the same internal
+    # predictor and produce identical logits; difference proves the override
+    # is consumed on the surprise path.
+    ext = torch.linspace(0.0, 5.0, 2 * 8).view(2, 8)
+    _, _, rout_ext = block(x, surprise=ext)
+    assert not torch.equal(rout_in.logits, rout_ext.logits)
