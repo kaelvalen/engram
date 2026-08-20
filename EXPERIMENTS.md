@@ -159,16 +159,51 @@ easy/compressible part, and the explicit memory retains only surprising tokens �
 is testable in this architecture by feeding `SurpriseEstimator` output into the
 router.
 
-**Planned test.** Feed the surprise signal into the router as an extra per-token
-feature (interface landed, see below; generation wiring is the follow-up), then
-re-run the identical spike-gate protocol (3 seeds × 8000 steps, MQAR 8-pairs @
-T=64, `configs/mom/spike.yaml`) and check whether it closes the gap to B3
-(GDR-only). This is **a hypothesis and a planned experiment, not a result** — no
-improvement is claimed before a run exists.
+**Planned test (design-review rework, 2026).** The router interface now folds the
+surprise signal through a **per-expert `surprise_weight`** (shape `[K]`, default
+zeros ⇒ inert, backward-compatible). This replaces the original scalar-broadcast
+form, which was **a measured no-op at `top_k=1`**: a per-token scalar added
+identically to all K expert logits is softmax/argmax shift-invariant, so it
+changed *neither* the routing decision *nor* the gate *nor* even the softmax —
+only the raw `logits` tensor (feeding L_bal/L_z). The corrected per-expert form
+can change the decision and is the interface for every stage below.
 
-**Status:** the router *interface* (opts into a `[B, T]` surprise feature,
-default-off `surprise_scale=0.0`) exists as of the repo-unification pass. The
-`SurpriseEstimator` → router wiring at train time is the next, separate task.
+Sigmoid (write-strength) form: `engram/saber/saber.py`'s `SABERBackbone` already
+uses `write_strength = sigmoid(γ·surprise)` for its explicit-memory write gate —
+that is pre-existing SABER code, **not** the router path.
+
+**Staged protocol (all MQAR spike: 3 seeds × 8000 steps @ T=64, laptop-class):
+sequenced to avoid confounding quantity with learnability.**
+
+1. **Stage 0 — fixed-scale probe.** *Is the signal useful at all?* Freeze the
+   router, sweep per-expert `surprise_weight` (and `surprise_scale`) over a small
+   grid. Not architectural learning — a cheap insurance check. If *no* setting
+   moves recall, the signal/predictor design is suspect before any learnability
+   work.
+2. **Stage 1 — learned, same `top_k` (`k=1` + straight_through).** The
+   apples-to-apples comparison to the existing negative baseline (0.023 vs
+   GDR-only 0.096) under the **identical `top_k=1`**. `surprise_weight` trains;
+   straight-through re-attaches the gate gradient (its own bias is a known
+   confound, but `top_k` stays fixed).
+3. **Stage 2 — full learned (`top_k=2`).** Higher capacity. **Must include the
+   control condition**: `top_k=2` with the surprise feature off (zeroed) alongside
+   `top_k=2 + surprise`. If both beat the baseline, the gain is from `top_k`
+   capacity, not surprise.
+
+**Signal source (decided): lightweight standalone predictor (pattern (a)), not
+the full SABER stack.** A small predictor `ĥ_t = P(h_{t-1})` over the router's
+pre-norm hidden stream, with an EMA copy as the stable surprise baseline (as in
+SABER's `Predictor`); surprise = normalized `|h_t − ĥ_t|`. Chosen over the
+EMA-of-past-deviation ("(b)") because the scientific question is *prediction
+error* (what the recurrent state fails to compress), not local volatility. `P`
+sees only `h_{<t}` by construction; a **causality/leakage test** is required
+(changing `h_{>t}` must not change `surprise_t`).
+
+**Status:** router per-expert interface landed + regression tests pass (see
+`tests/mom/test_router_surprise.py`). The standalone predictor implementation
+and the three stage runs are the next, separate tasks. As before: **a
+hypothesis and a planned experiment, not a result** — no improvement is claimed
+before a run exists.
 
 Gate protocol: 3 seeds × 8000 steps, MQAR 8-pairs @ T=64, vocab 512, bf16,
 lr 1e-3 (see `configs/mom/spike.yaml` for the recipe note — the harder sweep

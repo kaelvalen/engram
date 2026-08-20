@@ -224,3 +224,66 @@ HAM family.)
 **Recommendation:** ENGRAM. If none fit, propose another one-liner with the
 same "route-by-surprise → imprint" metaphor (e.g. **Imprint**, **Etch**,
 **Trace**) before falling back to SAGE.
+
+---
+
+## Step 6 — Design-review rework (post commit 024a09a / c056960)
+
+Resolutions from the design review. Applies on top of Steps 1–5; the router
+interface and the experiment protocol were both reworked.
+
+### 6.1 Discovery: the original scalar-broadcast surprise was a no-op at top_k=1
+`z = W_r h + scale · surprise.unsqueeze(-1)` added the *same* scalar to all K
+expert logits. Softmax and argmax are shift-invariant, so at `top_k=1` it
+changed **nothing**: not the decision, not the gate, not even the softmax —
+only the raw `logits` field (feeding L_bal/L_z). Empirically confirmed
+(`selection_same=True, gates_same=True, probs_same=True`). The committed
+"surprise-gated routing interface" therefore did not gate routing.
+
+### 6.2 Fix: per-expert surprise weight (implemented, tests pass)
+- `TokenRouter` now has `surprise_weight: Parameter(shape [K])`, default zeros
+  ⇒ inert, backward-compatible (all prior tests unchanged).
+- Forward (learned, scale>0):
+  `z = W_r h + surprise_scale · surprise_weight · surprise.unsqueeze(-1)`.
+  Expert-dependent ⇒ can change the decision.
+- `MoMConfig.router_surprise_scale` stays the master on/off gate.
+- Tests `tests/mom/test_router_surprise.py` rewritten: inert defaults, per-expert
+  logit-shift formula, **decision can actually flip**, grad reaches
+  `router.weight` and `surprise_weight`, wrong-shape raises, modes ignore.
+- Note: with `top_k=1` and no straight-through, `surprise_weight` still gets no
+  task gradient *through the gate path* (Switch limitation) — that is precisely
+  why the experiment is staged (6.4).
+
+### 6.3 Signal source (decided): lightweight standalone predictor, type (a)
+A small causal predictor over the router's pre-norm hidden stream:
+`ĥ_t = P(h_{t-1})`, `P` = small MLP with an **EMA copy** as the stable surprise
+baseline (mirrors `engram/saber/saber.py` `Predictor`); online `P` backprop trains
+toward `h_t` (stop-grad); surprise = normalized `|h_t − ĥ_t|`.
+- **Chosen over (b)** (deviation from EMA of past, `|h_t − EMA(h_{<t})|`): (b) is
+  local volatility, not *prediction error*, and the research question is what the
+  recurrent state fails to compress. (a) matches SABER and the literature.
+- **Full SABER stack is NOT used in this experiment** — kept separate so the
+  routing question is not confounded by slot-memory machinery.
+- **Causality requirement:** `P` sees only `h_{<t}` by construction. Add a
+  leakage test: perturbing `h_{>t}` must not change `surprise_t`; assert the
+  EMA/online predictor built from a shifted stream matches the causal reference.
+
+### 6.4 Staged experiment protocol (avoid conflating quantity with learnability)
+All on the MQAR spike protocol (3 seeds × 8000 steps @ T=64), laptop-class:
+0. **Fixed-scale probe** — freeze router, sweep per-expert `surprise_weight` /
+   `surprise_scale`. "Is the signal useful at all?" Cheap insurance; if no
+   setting moves recall, redesign the predictor before any learnability work.
+1. **Learned, `top_k=1` + straight_through** — apples-to-apples vs the existing
+   negative baseline (same `top_k`). `surprise_weight` trains.
+2. **Full learned `top_k=2`** — higher capacity. **Requires the control
+   condition**: `top_k=2` without surprise (zeroed) alongside `top_k=2 + surprise`.
+   If both beat baseline, the gain is from `k`, not surprise.
+
+Report `mean ± std` over seeds; discount the efficiency claim until gathered
+execution (§3.4, v2) lands — dense masking scales compute with `K`, not `top_k`.
+
+### 6.5 Provenance note
+`write_strength = sigmoid(γ·surprise)` in `engram/saber/saber.py` is
+**pre-existing** SABER code (commit 9b4c724), not part of these commits. It is
+the explicit-memory write gate; the router path is the additive per-expert
+feature above. Keep these two mechanisms distinct in any paper/write-up.

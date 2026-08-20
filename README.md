@@ -211,25 +211,29 @@ The failure signature above (uniform-ish routing dilutes GDR on pure-recall)
 points at a **weak routing signal** as much as a capacity limit: `z_t = W_r h_t`
 carries no information about how well the recurrent state is predicting the
 current token. The fix under test feeds a **normalized surprise estimator**
-(EMA predictor + surprise scalar, in `engram/saber/`) into the router as an extra
-per-token feature, so primitive choice can be driven by "is this token
-surprising, i.e. worth an explicit write?"
+(EMA predictor + surprise scalar) into the router as an extra per-token feature,
+so primitive choice can be driven by "is this token surprising, i.e. worth an
+explicit write?"
 
-- **Status — interface landed, experiment NOT run.** `TokenRouter` accepts an
-  optional `[B, T]` `surprise` tensor gated by `surprise_scale` (default `0.0`
-  ⇒ unchanged behaviour, all existing tests green), configurable via
-  `MoMConfig.router_surprise_scale`.
-- **Open question** (the next, separate task): where the surprise feature comes
-  from at train time — a lightweight standalone predictor vs. the full SABER
-  stack — and whether it closes the spike-gate gap to GDR-only. This is a
-  *planned experiment*: no improvement is claimed before a run exists
-  (see [EXPERIMENTS.md](EXPERIMENTS.md)).
+- **Status — per-expert interface landed, experiment NOT run.** `TokenRouter`
+  folds an optional `[B, T]` `surprise` tensor through a **per-expert
+  `surprise_weight`** (shape `[K]`, default zeros ⇒ doubly inert,
+  backward-compatible), gated by `surprise_scale` / `MoMConfig.router_surprise_scale`.
+  A plain scalar-broadcast surprise was rejected: it is softmax/argmax
+  shift-invariant and hence a no-op at `top_k=1` (see EXPERIMENTS.md).
+- **Planned, staged, sequential (see EXPERIMENTS.md):** ① fixed-scale probe →
+  ② learned at `top_k=1` + straight_through (apples-to-apples vs the existing
+  baseline) → ③ learned `top_k=2` **with the `top_k=2` no-surprise control**. Signal
+  source = a lightweight standalone EMA predictor (`ĥ_t = P(h_{t-1})`, causal)
+  rather than the full SABER stack, to avoid confounding routing with slot-memory
+  machinery. All *planned*; no improvement is claimed before a run exists.
 
-`engram/saber/` supplies this signal: latent encoder → capacity-limited GRU
-policy → EMA predictor → normalized surprise → adaptive budget → sparse slot
-readout, with InfoNCE + JEPA-style losses, a 3-phase trainer, and diagnostics
-(R1–R5). SABER is no longer a standalone "experimental" effort — it is the
-surprise-signal provider inside MoM. Covered by `tests/test_saber.py`.
+`engram/saber/` supplies the same surprise mechanism at the memory-write-gate
+level (latent encoder → GRU policy → EMA predictor → normalized surprise →
+adaptive budget → sparse slot readout, InfoNCE + JEPA losses, 3-phase trainer,
+R1–R5 diagnostics). SABER is not a standalone "experimental" effort — it is the
+surprise-signal provider; the router consumes the same normalized-surprise
+concept over its own hidden stream. Covered by `tests/test_saber.py`.
 
 ## Inference
 

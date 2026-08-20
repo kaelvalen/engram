@@ -73,10 +73,20 @@ class TokenRouter(nn.Module):
         self.top_k = top_k
         self.mode = mode
         self.straight_through = straight_through
-        # Fixed scalar scale for the optional surprise feature. 0.0 = off.
-        # (Learnable scale is deferred to the experiment task; a fixed,
-        # config-driven scale keeps v1 simple and interpretable.)
+        # Master switch for the optional surprise feature. 0.0 = off entirely.
         self.surprise_scale = surprise_scale
+        # Per-expert surprise coefficients, shape [K]. Default zeros => the
+        # surprise feature contributes nothing (backward-compatible inert
+        # default). When enabled (scale>0) AND these are nonzero, surprise is
+        # expert-dependent and can change the routing decision — a scalar
+        # broadcast over all experts is softmax/argmax shift-invariant and
+        # hence a no-op for top_k=1, so per-expert coefficients are required.
+        # Learned in "learned" mode (with top_k>1 or straight_through, else
+        # the gate path carries no task gradient); frozen + swept for the
+        # fixed-scale probe stage of the experiment.
+        self.surprise_weight = nn.Parameter(torch.zeros(num_experts))
+        if mode != "learned":
+            self.surprise_weight.requires_grad_(False)  # frozen routers (B4/B5)
 
         self.weight = nn.Parameter(torch.zeros(num_experts, hidden_dim))
         if mode == "learned":
@@ -104,8 +114,10 @@ class TokenRouter(nn.Module):
         ``exclude`` force-drops experts (analysis §7.3 knockout); the router
         renormalises over the remaining ones. Ignored outside "learned" mode.
         ``surprise`` (optional, learned mode only): [B, T] normalized per-token
-        scalar, added to the routing logits scaled by ``surprise_scale``. Must
-        be None (or surprise_scale == 0) to reproduce the plain router exactly.
+        scalar, added to the routing logits through the per-expert
+        ``surprise_weight`` scaled by ``surprise_scale``. Must be None (or
+        surprise_scale == 0, or all-zero surprise_weight) to reproduce the
+        plain router exactly.
         """
         B, T, _ = h.shape
         K, k = self.num_experts, self.top_k
@@ -134,8 +146,10 @@ class TokenRouter(nn.Module):
         if surprise is not None and self.surprise_scale != 0.0:
             if surprise.shape[:2] != (B, T):
                 raise ValueError(f"surprise must be [B, T]={B, T}, got {tuple(surprise.shape)}")
-            # surprise: [B, T] normalized scalar -> [B, T, 1], broadcast over experts.
-            z = z + self.surprise_scale * surprise.unsqueeze(-1)
+            # Per-expert coefficient: surprise_weight [K] broadcasts against
+            # surprise [B, T, 1] -> [B, T, K], so each expert's logit shifts
+            # differently and the routing decision can change.
+            z = z + self.surprise_scale * self.surprise_weight * surprise.unsqueeze(-1)
 
         probs = F.softmax(z, dim=-1)
         idx = z.topk(k, dim=-1).indices  # [B, T, k]
