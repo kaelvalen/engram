@@ -1,4 +1,4 @@
-# PRISM: A Modality-Portable Hybrid Linear-Recurrent Backbone for Clinical Time-Series and Natural Signals
+# ENGRAM: A Modality-Portable Hybrid Linear-Recurrent Backbone for Clinical Time-Series and Natural Signals
 
 **Target venue:** ICML 2026 ES-FoMo IV (4 pages main + unlimited refs/appendix,
 ICML template) — backup: NeurIPS 2026 ENLSP-VI (4-page short). This file is the
@@ -14,14 +14,14 @@ language modeling, but their design choices — tokenizers, head dims, layer
 ratios — were tuned for text. We ask whether a *single* hybrid backbone, with no
 modality-specific architectural changes and identical hyperparameters, can match
 strong convolutional baselines across 12-lead ECG (PTB-XL), spoken commands, and
-sequential images. PRISM interleaves Mamba-2-style SSD blocks (per-channel
+sequential images. ENGRAM interleaves Mamba-2-style SSD blocks (per-channel
 selective state) with Gated Delta Rule blocks, optionally with sliding-window
 attention. We contribute (i) a from-scratch, pure-PyTorch reference
 implementation of the SSD scan and the chunked gated delta rule, with
 numerical-equivalence tests against `torch.associative_scan` (verified on CPU)
 and the FLA Triton kernels (gated by a GPU test — `[TODO: confirm pass before
 claiming FLA equivalence]`); and (ii) a cross-modal portability study. `[TODO: headline result —
-e.g. "PRISM matches xresnet1d101 within bootstrap CI on PTB-XL super-diagnostic
+e.g. "ENGRAM matches xresnet1d101 within bootstrap CI on PTB-XL super-diagnostic
 (0.9XX vs 0.928 macro AUC) while reusing the same backbone on audio and vision".]`
 
 ## 1. Introduction
@@ -66,7 +66,7 @@ optional sliding-window-attention ablation.
 
 ## 3. Method
 
-**Backbone.** PRISM is a stack defined by a `block_pattern` of tokens
+**Backbone.** ENGRAM is a stack defined by a `block_pattern` of tokens
 `{s4, delta, swa}` (default 3:1 SSD:Delta over 12 layers). Each block is a
 pre-norm residual: `RMSNorm → (short causal conv) → mixer → +x`, then
 `RMSNorm → SwiGLU → +x`. A single per-modality linear projection adapts input
@@ -98,7 +98,7 @@ AdamW + cosine, identical across modalities; mean ± std over 3 seeds. PTB-XL
 metric is macro one-vs-rest AUROC (Strodthoff et al., 2020). `[TODO: run]`
 
 **Main table.** `[TODO]` Architectures (ResNet1D, Transformer, SSD-only,
-Delta-only, PRISM hybrid, PRISM legacy-S4D) × modalities (PTB-XL super-diag,
+Delta-only, ENGRAM hybrid, ENGRAM legacy-S4D) × modalities (PTB-XL super-diag,
 sCIFAR-10, Speech Commands).
 
 **Ablations on PTB-XL super-diag.** `[TODO]`
@@ -114,7 +114,7 @@ Report on our own GPU (do not quote others' H100 numbers).
 
 ## 5. Discussion & Limitations
 
-Be explicit and honest: (i) PRISM is *modality-portable* (same arch + HPs,
+Be explicit and honest: (i) ENGRAM is *modality-portable* (same arch + HPs,
 separate runs), not yet a single-set-of-weights joint model; (ii) `[TODO: state
 which PTB-XL tasks we do/do not match within CI]`; (iii) the full 6-task
 multi-label PTB-XL table and bootstrap CIs are `[TODO]`; (iv) we use Mamba-2 SSD

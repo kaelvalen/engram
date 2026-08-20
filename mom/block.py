@@ -45,6 +45,7 @@ class MoMBlock(nn.Module):
             straight_through=cfg.straight_through,
             mode=cfg.router_mode,
             seed=cfg.router_seed + 1000 * layer_idx,
+            surprise_scale=cfg.router_surprise_scale,
         )
         self.experts = nn.ModuleDict({name: build_expert(name, cfg) for name in cfg.experts})
         self.shared = build_expert(cfg.shared_expert, cfg) if cfg.shared_expert else None
@@ -58,11 +59,14 @@ class MoMBlock(nn.Module):
         x: torch.Tensor,
         states: ExpertStateDict | None = None,
         exclude: set[str] | None = None,
+        surprise: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, ExpertStateDict, RoutingOutput]:
         """x: [B, T, D]. Returns (y, state_updates, routing).
 
         ``exclude`` knocks out experts by name (analysis §7.3); the router
-        renormalises over the survivors.
+        renormalises over the survivors. ``surprise`` (optional, [B, T]) is
+        passed to the router when ``router_surprise_scale > 0``; None keeps
+        the plain router behaviour.
         """
         i = self.layer_idx
         names = list(self.experts.keys())
@@ -74,7 +78,7 @@ class MoMBlock(nn.Module):
             drop_idx = {names.index(n) for n in exclude}
 
         r = x
-        routing = self.router(x, exclude=drop_idx)  # h_t = pre-norm stream (§3.3)
+        routing = self.router(x, exclude=drop_idx, surprise=surprise)  # h_t = pre-norm stream (§3.3)
 
         # Post-hoc renormalisation for non-learned modes (router-level
         # exclusion applies to the learned top-k only).

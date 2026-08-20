@@ -31,6 +31,7 @@ class MoMConfig:
     router_init_std: float = 0.01  # W_r ~ N(0, 0.01²) — near-uniform init
     router_seed: int = 0  # generator seed for router_mode="random"
     straight_through: bool = False  # ST gate estimator, R4 fallback
+    router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
 
     # Shared expert (§3.7): one SSD instance always on, output added ungated.
     shared_expert: str | None = None  # None | "ssd"
@@ -79,6 +80,8 @@ class MoMConfig:
             raise ValueError("hidden_dim must be divisible by num_heads")
         if self.lambda_bal < 0 or self.lambda_z < 0:
             raise ValueError("loss weights must be non-negative")
+        if self.router_surprise_scale < 0:
+            raise ValueError("router_surprise_scale must be non-negative")
         if not (0 < self.s4_dt_min < self.s4_dt_max):
             raise ValueError("s4_dt_min must be < s4_dt_max")
 

@@ -1,4 +1,4 @@
-# PRISM — Experiment Matrix
+# ENGRAM — Experiment Matrix
 
 This file *locks* the experiment plan before running anything (per good ML
 practice). Every table row in the paper maps to one command here. Report
@@ -24,9 +24,9 @@ PTB-XL is benchmarked with **macro one-vs-rest AUROC**, not accuracy
 **Use the full signal.** `--window-size` defaults to **1000** = the whole 10 s
 record at 100 Hz, matching what `xresnet1d101` consumes. Shorter windows (the old
 250/128 defaults) truncate to the first 1–2.5 s, discard most of the ECG, and
-systematically bias PRISM *down* relative to the baseline — an apples-to-oranges
+systematically bias ENGRAM *down* relative to the baseline — an apples-to-oranges
 confound. Keep 1000 for any number quoted against the leaderboard (use 5000 at
-500 Hz). This costs ~4× the sequence length vs the old default, but PRISM is a
+500 Hz). This costs ~4× the sequence length vs the old default, but ENGRAM is a
 linear-time model so it is O(T); correctness over speed here.
 
 ## Main table (architectures × modalities)
@@ -35,10 +35,10 @@ Shared budget: `hidden_dim=256, num_layers=12, num_heads=8` (~8M params).
 
 | Model | Command (per seed) |
 |---|---|
-| PRISM hybrid (SSD + Delta 3:1) | `train.py --modality <m> --ssm-kind ssd` |
+| ENGRAM hybrid (SSD + Delta 3:1) | `train.py --modality <m> --ssm-kind ssd` |
 | Mamba-2 only (SSD) | `train.py --modality <m> --ssm-kind ssd --block-pattern s4` |
 | Gated DeltaNet only | `train.py --modality <m> --block-pattern delta` |
-| PRISM legacy (S4D + Delta) | `train.py --modality <m> --ssm-kind s4d_legacy --s4d-init lin` |
+| ENGRAM legacy (S4D + Delta) | `train.py --modality <m> --ssm-kind s4d_legacy --s4d-init lin` |
 | ResNet1D baseline | `scripts/train_baseline.py --model resnet1d --task ecg --window-size 1000 --ecg-task superdiag --ecg-multilabel` |
 | Transformer baseline | `scripts/train_baseline.py --model transformer --task ecg --window-size 1000 --ecg-task superdiag --ecg-multilabel` |
 
@@ -143,6 +143,33 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
 
 ## MoM spike status (2026-07-18, RTX 5060)
 
+### Surprise-gated routing — hypothesis & planned experiment (NOT yet run)
+
+The MoM router (`mom/router.py`) currently routes on `z_t = W_r h_t` alone — a
+plain learned linear projection (Switch-Transformer style) with **no signal for
+"how well is the recurrent state predicting this token."** The `SurpriseEstimator`
+in `prism/saber/saber.py` is exactly the missing quantity: it returns a clamped,
+normalized per-token scalar measuring how far each token deviates from the
+recurrent state's prediction.
+
+**Hypothesis.** The first spike-gate failure (MoM recall 0.023 vs GDR-only 0.096
+@64, see table below) is partly a *weak-routing-signal* problem, not purely a
+capacity problem. The literature's proposal — the recurrent state summarizes the
+easy/compressible part, and the explicit memory retains only surprising tokens —
+is testable in this architecture by feeding `SurpriseEstimator` output into the
+router.
+
+**Planned test.** Feed the surprise signal into the router as an extra per-token
+feature (interface landed, see below; generation wiring is the follow-up), then
+re-run the identical spike-gate protocol (3 seeds × 8000 steps, MQAR 8-pairs @
+T=64, `configs/mom/spike.yaml`) and check whether it closes the gap to B3
+(GDR-only). This is **a hypothesis and a planned experiment, not a result** — no
+improvement is claimed before a run exists.
+
+**Status:** the router *interface* (opts into a `[B, T]` surprise feature,
+default-off `surprise_scale=0.0`) exists as of the repo-unification pass. The
+`SurpriseEstimator` → router wiring at train time is the next, separate task.
+
 Gate protocol: 3 seeds × 8000 steps, MQAR 8-pairs @ T=64, vocab 512, bf16,
 lr 1e-3 (see `configs/mom/spike.yaml` for the recipe note — the harder sweep
 cells do not reach the MQAR "click" inside this budget on an 8 GB GPU).
@@ -179,4 +206,6 @@ permutations; layer 1: 0.52 nats) — see `output/mom/analysis/seed0/report.json
 
 **Next experiments:** `lambda_bal ∈ {1e-3, 1e-1}` sweep; longer runs at the
 same recipe (the click was still in progress at 8k steps for MoM); parameter
-matching; passkey + state-tracking suites (tasks implemented, untrained).
+matching; passkey + state-tracking suites (tasks implemented, untrained);
+**surprise-gated routing** (feed `SurpriseEstimator` → router, re-run the
+spike-gate protocol in the same section).

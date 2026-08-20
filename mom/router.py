@@ -12,6 +12,13 @@ With k=1 the renormalised gate is exactly 1, so no gradient flows through
 the gate path; the router then learns only via L_bal/L_z (§3.7), matching
 Switch.  ``straight_through=True`` (R4 fallback) re-attaches the gate path
 by treating the selected softmax probability as the gradient carrier.
+
+Optional surprise-gated routing: when ``surprise_scale > 0`` and a per-token
+``surprise: [B, T]`` tensor (e.g. SABER's normalized surprise estimator) is
+passed, it is added to the logits as an extra feature so routing can ask "how
+surprising is this token" in addition to "what did the recurrent state learn."
+``surprise_scale = 0`` (default) is byte-for-byte identical to the plain
+learned router, so existing tests are unchanged.
 """
 
 from __future__ import annotations
@@ -54,6 +61,7 @@ class TokenRouter(nn.Module):
         straight_through: bool = False,
         mode: str = "learned",
         seed: int = 0,
+        surprise_scale: float = 0.0,
     ):
         super().__init__()
         if not 1 <= top_k <= num_experts:
@@ -65,6 +73,10 @@ class TokenRouter(nn.Module):
         self.top_k = top_k
         self.mode = mode
         self.straight_through = straight_through
+        # Fixed scalar scale for the optional surprise feature. 0.0 = off.
+        # (Learnable scale is deferred to the experiment task; a fixed,
+        # config-driven scale keeps v1 simple and interpretable.)
+        self.surprise_scale = surprise_scale
 
         self.weight = nn.Parameter(torch.zeros(num_experts, hidden_dim))
         if mode == "learned":
@@ -81,11 +93,19 @@ class TokenRouter(nn.Module):
             self._generator = torch.Generator()
             self._generator.manual_seed(seed)
 
-    def forward(self, h: torch.Tensor, exclude: set[int] | None = None) -> RoutingOutput:
+    def forward(
+        self,
+        h: torch.Tensor,
+        exclude: set[int] | None = None,
+        surprise: torch.Tensor | None = None,
+    ) -> RoutingOutput:
         """Route every token. h: [B, T, D] pre-norm hidden state (§3.3).
 
         ``exclude`` force-drops experts (analysis §7.3 knockout); the router
         renormalises over the remaining ones. Ignored outside "learned" mode.
+        ``surprise`` (optional, learned mode only): [B, T] normalized per-token
+        scalar, added to the routing logits scaled by ``surprise_scale``. Must
+        be None (or surprise_scale == 0) to reproduce the plain router exactly.
         """
         B, T, _ = h.shape
         K, k = self.num_experts, self.top_k
@@ -110,6 +130,12 @@ class TokenRouter(nn.Module):
             drop = torch.zeros(K, dtype=torch.bool, device=z.device)
             drop[list(exclude)] = True
             z = z.masked_fill(drop, float("-inf"))
+
+        if surprise is not None and self.surprise_scale != 0.0:
+            if surprise.shape[:2] != (B, T):
+                raise ValueError(f"surprise must be [B, T]={B, T}, got {tuple(surprise.shape)}")
+            # surprise: [B, T] normalized scalar -> [B, T, 1], broadcast over experts.
+            z = z + self.surprise_scale * surprise.unsqueeze(-1)
 
         probs = F.softmax(z, dim=-1)
         idx = z.topk(k, dim=-1).indices  # [B, T, k]

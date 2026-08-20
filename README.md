@@ -1,4 +1,4 @@
-# PRISM — modality-portable hybrid linear-recurrent backbone
+# ENGRAM — modality-portable hybrid linear-recurrent backbone
 
 > One hybrid **SSD + Gated-Delta** sequence backbone — no modality-specific
 > architecture — applied with **identical hyperparameters** to 12-lead ECG
@@ -6,9 +6,14 @@
 > implementation with full **numerical-equivalence tests** against the
 > `torch.associative_scan` and FLA Triton kernels.
 >
-> This repo also hosts **MoM** (Mixture of Memory Primitives) under `mom/` —
-> the follow-up architecture that routes every token to a learned memory
-> primitive instead of fixing the SSD:GDR ratio by hand (see below).
+> Built on top of that verifiable core, **MoM** (Mixture of Memory Primitives)
+> under `mom/` is the architecture contribution: a **surprise-gated router**
+> decides, per token, which memory primitive updates its state — a learned
+> answer to *when a compressed recurrent state suffices vs. when a surprising
+> token must be written explicitly* (see [MoM](#mom--mixture-of-memory-primitives-mom)).
+>
+> *The Python package is still `prism` internally; "ENGRAM" is the project and
+> paper name.*
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![PyTorch 2.5+](https://img.shields.io/badge/pytorch-2.5%2B-orange)](https://pytorch.org/)
@@ -19,7 +24,7 @@
 ## What's the claim
 
 Hybrid linear-recurrent backbones (Mamba-2, Gated DeltaNet) win on *language*,
-but their design choices are language-specific. PRISM tests whether a single
+but their design choices are language-specific. ENGRAM tests whether a single
 hybrid backbone — with **no modality-specific architectural tweaks** — matches
 strong CNN baselines on PTB-XL (the primary, clinically-defensible target),
 Speech Commands, and sequential CIFAR-10.
@@ -59,9 +64,9 @@ PTB-XL super-diag, **2 epochs, 1 seed**, macro-AUROC:
 
 | Config | val macro-AUC |
 |---|---|
-| **PRISM hybrid (SSD+GDR)** | **0.8908** |
+| **ENGRAM hybrid (SSD+GDR)** | **0.8908** |
 | Gated DeltaNet only | 0.8906 |
-| PRISM legacy (S4D+GDR) | 0.8882 |
+| ENGRAM legacy (S4D+GDR) | 0.8882 |
 | Mamba-2 only (SSD) | 0.8836 |
 | ResNet1D | 0.8828 |
 | small Transformer | 0.8769 |
@@ -161,14 +166,19 @@ works behind TLS-intercepting proxies); output goes to `datasets/audio/{train,va
 
 ## MoM — Mixture of Memory Primitives (`mom/`)
 
-MoM replaces PRISM's fixed block ratio with a **bank of heterogeneous memory
+MoM replaces ENGRAM's fixed block ratio with a **bank of heterogeneous memory
 experts** (SSD, GDR; SWA scaffolded for v2) and a lightweight **per-token
 router**: for every token, the router selects which memory primitive updates
 its state and produces that token's output. The composition of the backbone
 becomes a learned function of the token stream rather than a hand-tuned
-constant (PRISM's 3:1 is recovered as the special case of a periodic router).
+constant (ENGRAM's 3:1 is recovered as the special case of a periodic router).
 
-- `mom/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes)
+The router's learned projection (`z_t = W_r h_t`, Switch-style) is now
+optionally augmented by an explicit **surprise signal** — how far each token
+deviates from the recurrent state's prediction — so routing can ask *"is this
+token surprising enough to write explicitly?"* before choosing a primitive.
+
+- `mom/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes; optional surprise feature via `surprise_scale`)
 - `mom/block.py` — MoMBlock: PRISM-exact residual/pre-norm anatomy + expert bank + router
 - `mom/registry.py` — expert registry (`ssd`, `gdr`, `swa`), masked-execution contract
 - `mom/losses.py` — Switch load-balancing + router z-loss (§3.7 stability objectives)
@@ -192,6 +202,32 @@ tasks. Ablations: `lambda_bal = 0` collapses hard (min util 0.0, R1 confirmed);
 positive: all four layers show significant mutual information between expert
 choice and token class (p = 0.002; layer 1: 0.52 nats). Run logs and
 checkpoints under `output/mom/`.
+
+### Surprise-gated routing (in progress)
+
+The failure signature above (uniform-ish routing dilutes GDR on pure-recall)
+points at a **weak routing signal** as much as a capacity limit: `z_t = W_r h_t`
+carries no information about how well the recurrent state is predicting the
+current token. The fix under test feeds a **normalized surprise estimator**
+(EMA predictor + surprise scalar, in `prism/saber/`) into the router as an extra
+per-token feature, so primitive choice can be driven by "is this token
+surprising, i.e. worth an explicit write?"
+
+- **Status — interface landed, experiment NOT run.** `TokenRouter` accepts an
+  optional `[B, T]` `surprise` tensor gated by `surprise_scale` (default `0.0`
+  ⇒ unchanged behaviour, all existing tests green), configurable via
+  `MoMConfig.router_surprise_scale`.
+- **Open question** (the next, separate task): where the surprise feature comes
+  from at train time — a lightweight standalone predictor vs. the full SABER
+  stack — and whether it closes the spike-gate gap to GDR-only. This is a
+  *planned experiment*: no improvement is claimed before a run exists
+  (see [EXPERIMENTS.md](EXPERIMENTS.md)).
+
+`prism/saber/` supplies this signal: latent encoder → capacity-limited GRU
+policy → EMA predictor → normalized surprise → adaptive budget → sparse slot
+readout, with InfoNCE + JEPA-style losses, a 3-phase trainer, and diagnostics
+(R1–R5). SABER is no longer a standalone "experimental" effort — it is the
+surprise-signal provider inside MoM. Covered by `tests/test_saber.py`.
 
 ## Inference
 
@@ -231,8 +267,8 @@ not accuracy. Baseline to match: `xresnet1d101` ≈ **0.928** macro AUC on the
 | Small Transformer | ~8M | _TODO_ | _TODO_ | _TODO_ |
 | Mamba-2 only (SSD) | ~8M | _TODO_ | _TODO_ | _TODO_ |
 | Gated DeltaNet only | ~8M | _TODO_ | _TODO_ | _TODO_ |
-| **PRISM (SSD + Delta hybrid)** | ~8M | _TODO_ | _TODO_ | _TODO_ |
-| PRISM legacy (S4D + Delta) | ~8M | 0.884 acc *(prior, single-seed)* | _TODO_ | _TODO_ |
+| **ENGRAM (SSD + Delta hybrid)** | ~8M | _TODO_ | _TODO_ | _TODO_ |
+| ENGRAM legacy (S4D + Delta) | ~8M | 0.884 acc *(prior, single-seed)* | _TODO_ | _TODO_ |
 
 The legacy `0.884` sCIFAR number is from the previous S4D backbone, kept only
 as a historical ablation row; see [EXPERIMENTS.md](EXPERIMENTS.md). All new
@@ -294,14 +330,6 @@ the production backends are numerically equivalent to the references. The FLA
 equivalence test passes on the RTX 5060 with fla 0.3.2 (state-layout mapping
 fixed 2026-07); it is skipped when the Triton kernel cannot execute.
 
-## SABER (`prism/saber/`, experimental)
-
-Surprise-adaptive memory layer under active research: latent encoder →
-capacity-limited GRU policy → EMA predictor → normalized-surprise estimator →
-adaptive budget → sparse slot readout, trained with an InfoNCE bottleneck +
-JEPA-style predictor loss, a 3-phase trainer, and diagnostics/recovery checks
-(R1–R5). Not wired into the benchmark matrix; covered by `tests/test_saber.py`.
-
 ## Testing
 
 ```bash
@@ -335,7 +363,8 @@ ruff format --check prism mom tests scripts train.py
 | `audio_synthetic` / `--audio-synthetic` | on | in-memory audio data; off = real Speech Commands dumps |
 
 MoM flags live in `mom/config.py` (`experts`, `top_k`, `router_mode`,
-`shared_expert`, `decay_on_skip`/`gdr_decay_on_skip`, `lambda_bal`, `lambda_z`).
+`shared_expert`, `decay_on_skip`/`gdr_decay_on_skip`, `lambda_bal`, `lambda_z`,
+`router_surprise_scale`).
 
 ---
 
@@ -355,7 +384,7 @@ prism/
 │   ├── scan.py               # associative_scan + two-buffer Hillis-Steele backends
 │   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
 │   └── block.py              # BLOCK_REGISTRY + PRISMBlock protocol + build_block dispatch
-├── saber/                    # experimental surprise-adaptive memory layer (R&D)
+├── saber/                    # surprise-adaptive memory layer (supplies surprise → MoM routing)
 ├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
 ├── baselines/                # ResNet1D, small Transformer
 └── data/                     # ecg / image / audio loaders (+ pure ptbxl_tasks mapping)
@@ -388,8 +417,8 @@ still needs doing before submission.
 ## Citation
 
 ```bibtex
-@misc{prism2026,
-  title  = {PRISM: a modality-portable hybrid linear-recurrent backbone},
+@misc{engram2026,
+  title  = {ENGRAM: a modality-portable hybrid linear-recurrent backbone},
   author = {Hakbilen, Mehmet Arda},
   year   = {2026},
   note   = {https://github.com/kaelvalen/prism}
