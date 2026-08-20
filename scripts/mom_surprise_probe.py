@@ -30,11 +30,14 @@ import yaml
 from mom.train import train_one
 
 # (tag, model-field overrides). Every non-"off" cell trains the predictor and
-# freezes the swept per-expert surprise_weight.
+# freezes the swept per-expert surprise_weight. The surprise signal is now
+# CENTERED / signed (design fix), so a per-expert weight perturbs per-token
+# rather than adding a constant bias that collapses routing. Cells sweep both a
+# direction-dominant scale (1.0) and a mild scale (0.1).
 GRID = [
     ("off", {"use_surprise_predictor": False, "router_surprise_scale": 0.0}),
     (
-        "w[1,-1]",
+        "w[1,-1] s1.0",
         {
             "use_surprise_predictor": True,
             "router_surprise_scale": 1.0,
@@ -43,7 +46,16 @@ GRID = [
         },
     ),
     (
-        "w[-1,1]",
+        "w[1,-1] s0.1",
+        {
+            "use_surprise_predictor": True,
+            "router_surprise_scale": 0.1,
+            "router_surprise_weight": (1.0, -1.0),
+            "freeze_surprise_weight": True,
+        },
+    ),
+    (
+        "w[-1,1] s1.0",
         {
             "use_surprise_predictor": True,
             "router_surprise_scale": 1.0,
@@ -52,7 +64,7 @@ GRID = [
         },
     ),
     (
-        "w[1,0]",
+        "w[1,0] s1.0",
         {
             "use_surprise_predictor": True,
             "router_surprise_scale": 1.0,
@@ -61,7 +73,7 @@ GRID = [
         },
     ),
     (
-        "w[0,1]",
+        "w[0,1] s1.0",
         {
             "use_surprise_predictor": True,
             "router_surprise_scale": 1.0,
@@ -70,14 +82,14 @@ GRID = [
         },
     ),
     (
-        "w[1,1]",
+        "w[1,1] s1.0",
         {
             "use_surprise_predictor": True,
             "router_surprise_scale": 1.0,
             "router_surprise_weight": (1.0, 1.0),
             "freeze_surprise_weight": True,
         },
-    ),  # same-sign control: expected no-op (shift-invariant)
+    ),  # same-sign control: expected no-op (shift-invariant), ~= off
 ]
 
 
@@ -103,7 +115,7 @@ def main() -> int:
         cfg["experiment"] = f"mom-surprise-{tag}"
         runs = [train_one(cfg, seed, device=args.device) for seed in seeds]
         results[tag] = runs
-        # row summary: mean ± std recall per context
+        # row summary: mean ± std recall per context + min-utilization (collapse det.)
         contexts = sorted({int(c) for r in runs for c in r.get("accuracy_by_context", {})})
         row = []
         for ctx in contexts:
@@ -111,6 +123,14 @@ def main() -> int:
             t = torch.tensor(accs, dtype=torch.float)
             s = f"@{ctx}={t.mean():.3f}" + (f"±{t.std():.3f}" if t.numel() > 1 else "")
             row.append(s.replace("nan", " - "))
+        mius = [
+            r["final"]["min_utilization"]
+            for r in runs
+            if r["final"].get("min_utilization") is not None
+        ]
+        if mius:
+            mt = torch.tensor(mius, dtype=torch.float)
+            row.append(f"min_util={mt.mean():.3f}" + (f"±{mt.std():.3f}" if mt.numel() > 1 else ""))
         print(f"  [{tag}] " + " ".join(row))
 
     # persist a compact summary next to the cell dirs

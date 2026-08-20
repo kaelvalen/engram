@@ -6,10 +6,15 @@ directly from x_{t-1} -- single forward pass, no cross-layer dependency,
 no cycle.
 
     x_hat_t = P_ema(x_{t-1})           # shift-by-one, causal by construction
-    surprise_t = clamp((|x_t - x_hat_t|.mean(-1) - mu) / (sigma.sqrt()+eps), 0, max)
+    surprise_t = clamp((|x_t - x_hat_t|.mean(-1) - mu) / (sigma.sqrt()+eps), -max, max)
 
-Same normalization scheme as SABER's SurpriseEstimator (running mu/sigma),
-reused for consistency -- computed from raw h instead of encoded z.
+Same normalization scheme as SABER's SurpriseEstimator (running mu/sigma), but
+**centered / signed**: SABER clamps to [0, max] (forcing nonneg), which when fed
+through a per-expert router weight creates a constant baseline bias that
+collapses routing at scale >> router logits. Here we keep the signed normalized
+deviation (mean ~ 0 over time, negative for more-predictable-than-typical
+tokens) so `w_e * surprise` perturbs routing per-token instead of biasing it
+globally.
 """
 
 from __future__ import annotations
@@ -59,7 +64,10 @@ class SurprisePredictor(nn.Module):
         return torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], dim=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """x: [B, T, D]; returns surprise [B, T] from the EMA (stable) baseline.
+        """x: [B, T, D]; returns centered, signed surprise [B, T] from the EMA
+        (stable) baseline. Signed (mean ~ 0, can be negative) so a per-expert
+        router weight modulates token-to-token *deviation* rather than adding a
+        constant bias — fixes the routing-collapse failure at large scale.
 
         Running mu/sigma update only in training mode; the EMA baseline is
         detached, so surprise never backprops into the predictor here (it is a
@@ -73,8 +81,9 @@ class SurprisePredictor(nn.Module):
                 self.mu.mul_(0.99).add_(abs_diff.mean(), alpha=0.01)
                 centered = abs_diff - self.mu
                 self.sigma.mul_(0.99).add_((centered**2).mean(), alpha=0.01)
+        # Signed / centered: mean ~ 0, symmetric clamp.
         surprise = ((abs_diff - self.mu) / (self.sigma.sqrt() + self.eps)).clamp(
-            0, self.surprise_max
+            -self.surprise_max, self.surprise_max
         )
         return surprise
 

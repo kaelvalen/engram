@@ -191,6 +191,23 @@ sequenced to avoid confounding quantity with learnability.**
    (If you instead want the production `associative_scan`/FLA kernels on NixOS,
    run inside `nix develop` and set `TRITON_LIBCUDA_PATH=/run/opengl-driver/lib`
    first; the reference path avoids needing this.)
+
+   **Found (2026): the first Stage-0 run collapsed, and it was a signal-design
+   flaw, not a real negative.** `w[1,-1] scale=1.0` gave `0.000±0.000` recall at
+   every context on every seed. Reproduction (utilization, no GPU needed): the
+   cell collapsed to `[1.000/0.000]` per layer (min_util 0.000), while `off` was
+   balanced (0.465). Cause: SABER-style surprise is clamped to `[0, max]`
+   (nonneg), and a nonneg surprise × per-expert weight adds a **constant
+   per-token bias** that, at `scale=1.0` (vs router logits `~0.01`), sends every
+   token to one expert — deterministic collapse, hence zero variance across
+   seeds. **Fix: center the surprise** — `SurprisePredictor.forward` now returns
+   the signed normalized `(abs_diff − mu)/(sigma+eps)` (symmetric clamp
+   `[−max, max]`, mean ~ 0), so a per-expert weight modulates token-to-token
+   deviation instead of a constant bias. Verified: centered `w[1,-1] scale=1`
+   no longer collapses (min_util ~0.44, balanced). The probe now prints per-cell
+   `min_utilization` and sweeps mixed scales; `[1,1]` remains the same-sign
+   no-op control (should match `off`). Stage-0 must be re-run with the centered
+   signal before drawing any conclusion.
 2. **Stage 1 — learned, same `top_k` (`k=1` + straight_through).** The
    apples-to-apples comparison to the existing negative baseline (0.023 vs
    GDR-only 0.096) under the **identical `top_k=1`**. `surprise_weight` trains;

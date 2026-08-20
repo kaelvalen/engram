@@ -48,7 +48,23 @@ def test_shape_and_range():
     surp = pred(x)
     assert tuple(surp.shape) == (3, 7)
     assert torch.isfinite(surp).all()
-    assert surp.min() >= 0 and surp.max() <= 5.0
+    # signed/symmetric clamp: values live in [-max, max]
+    assert surp.min() >= -5.0 and surp.max() <= 5.0
+
+
+def test_signed_surprise_is_centered_when_mu_trained():
+    """Once mu tracks abs_diff (many training steps), surprise is centered ~0
+    (can be negative) — that is what lets a per-expert weight perturb rather
+    than bias the router."""
+    pred = SurprisePredictor(hidden_dim=16).train()
+    torch.manual_seed(0)
+    x = torch.randn(2, 8, 16)
+    # Let the running mu/sigma stats converge toward the batch's abs_diff mean.
+    # (ema_decay 0.99 => time constant ~100; loop well past it for full convergence)
+    for _ in range(3000):
+        pred(x)
+    centered = pred(x)
+    assert abs(centered.mean().item()) < 1e-2  # centered ~0 after convergence
 
 
 def test_eval_determinism_and_frozen_buffers():
