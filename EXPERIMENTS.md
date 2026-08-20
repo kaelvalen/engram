@@ -75,6 +75,20 @@ python scripts/aggregate_results.py output/benchmarks --metric val_macro_auc   #
 Budget ≈ 30–60 single-GPU-hours (4090/A100/5090). If constrained: drop sCIFAR,
 run 2 seeds for ablations.
 
+## RTX 4090 / Ada
+
+For an NVIDIA RTX 4090 (24 GB, Ada/sm_89) use the dedicated script. Full paper
+config (~8M params) at default batch 24, `torch.compile` on, expandable-segments
+allocator. Unlike Blackwell, the 4090 has full Triton support: the SSD
+`associative_scan` backend is used and the FLA delta backend is available
+(`DELTA_BACKEND=fla`; default `reference` is the safe, equivalence-tested
+choice):
+
+```
+DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks_rtx4090.sh
+python scripts/aggregate_results.py output/benchmarks_rtx4090 --metric val_macro_auc
+```
+
 ## RTX 5090 / Blackwell
 
 For an NVIDIA RTX 5090 use the dedicated script. It runs the full paper matrix
