@@ -180,6 +180,17 @@ sequenced to avoid confounding quantity with learnability.**
    grid. Not architectural learning — a cheap insurance check. If *no* setting
    moves recall, the signal/predictor design is suspect before any learnability
    work.
+
+   **How to run** (Triton-free — the probe uses `scan_backend/delta_backend:
+   reference`, so it runs without any CUDA-kernel/Triton dependency, e.g. the
+   NixOS `/sbin/ldconfig` issue):
+   ```
+   python scripts/mom_surprise_probe.py --config configs/mom/surprise_probe.yaml \
+       --seeds 0,1,2 --device cuda
+   ```
+   (If you instead want the production `associative_scan`/FLA kernels on NixOS,
+   run inside `nix develop` and set `TRITON_LIBCUDA_PATH=/run/opengl-driver/lib`
+   first; the reference path avoids needing this.)
 2. **Stage 1 — learned, same `top_k` (`k=1` + straight_through).** The
    apples-to-apples comparison to the existing negative baseline (0.023 vs
    GDR-only 0.096) under the **identical `top_k=1`**. `surprise_weight` trains;

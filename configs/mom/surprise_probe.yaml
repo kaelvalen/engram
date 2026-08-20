@@ -21,6 +21,12 @@ model:
   gdr_decay_on_skip: false
   lambda_bal: 1.0e-2
   lambda_z: 1.0e-3
+  # Reference backends: the probe measures routing behavior, not kernel
+  # throughput, and equivalence to the production kernels is already proven by
+  # tests. Using reference scans/delta avoids any Triton/CUDA-kernel dependency
+  # (e.g. the NixOS /sbin/ldconfig issue) so Stage 0 runs anywhere.
+  scan_backend: reference
+  delta_backend: reference
   use_surprise_predictor: true
   surprise_pred_loss_weight: 0.1
   router_surprise_scale: 1.0
