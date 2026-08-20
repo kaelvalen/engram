@@ -287,3 +287,128 @@ execution (§3.4, v2) lands — dense masking scales compute with `K`, not `top_
 **pre-existing** SABER code (commit 9b4c724), not part of these commits. It is
 the explicit-memory write gate; the router path is the additive per-expert
 feature above. Keep these two mechanisms distinct in any paper/write-up.
+
+---
+
+## Step 7 — `mom/surprise.py`: lightweight causal standalone predictor (spec for coder)
+
+### 7.1 Wiring decision (revised — layer-local, acyclic; option (b))
+The naive "final-hidden, single global surprise fed to all routers" is a
+**depth-cycle, not a time-cycle**: `surprise = f(h_final)` but `h_final` is only
+produced *by* the routers that `surprise` is meant to drive — circular across
+depth, uncomputable in one forward pass (forces the two-pass option (a)).
+REJECTED for this experiment.
+
+Chosen: **(b) layer-local.** Each `MoMBlock` owns its own `HiddenSurprisePredictor`
+that predicts that block's **own input** `x_i` (the pre-norm hidden entering the
+block — the same signal the router's `W_r` reads): `ĥ_{i,t} = P_i(x_{i,t-1})`,
+`surprise_i = normalize(|x_{i,t} − ĥ_{i,t}|)`, fed **only to that block's router**
+— exactly the existing layer-local interface
+`self.router(x, exclude, surprise)` (single pass, no two-forward).
+
+Acyclicity: `surprise_i` uses only `x_i`, which is already causally produced
+before the router runs in the same forward. Cross-layer coupling is the ordinary
+DAG of a deep network (`surprise_1 → x_1 → x_2 → surprise_2`), not a cycle.
+Compute is not doubled.
+
+Alternative explicitly rejected: (a) two-pass (plain forward → surprise → rerun
+with surprise). It doubles compute and changes semantics ("surprise from a clean
+pass") — a deliberate heavier experiment, not the default.
+
+### 7.2 File / class / signature
+**File:** `mom/surprise.py` — new module.
+
+```python
+from dataclasses import dataclass
+import torch, torch.nn as nn, torch.nn.functional as F
+
+@dataclass
+class SurprisePredictorConfig:
+    hidden_dim: int
+    predictor_hidden_dim: int = 64          # small MLP capacity
+    ema_decay: float = 0.999                 # stable baseline lag
+    surprise_mu_lambda: float = 0.99         # running mean decay
+    surprise_sigma_lambda: float = 0.99      # running var decay
+    surprise_eps_min: float = 1e-6
+    surprise_eps_scale: float = 1.0
+    surprise_max: float = 3.0
+
+class HiddenSurprisePredictor(nn.Module):
+    """ĥ_t = P(x_{t-1}); surprise = normalized |x_t - ĥ_t| (EMA baseline).
+    Layer-local (option (b)): operates on ONE block's own input x_i and feeds
+    only that block's router. Acyclic + single pass by construction.
+
+    Lightweight, causal, SABER-free: no LatentEncoder. Mirrors
+    engram/saber/saber.py Predictor + SurpriseEstimator patterns only.
+    """
+    def __init__(self, cfg: SurprisePredictorConfig):
+        # online predictor, strictly past-only input
+        self.predictor = nn.Sequential(
+            nn.Linear(cfg.hidden_dim, cfg.predictor_hidden_dim),
+            nn.GELU(),
+            nn.Linear(cfg.predictor_hidden_dim, cfg.hidden_dim),
+        )
+        # EMA shadows of ALL predictor params (stable surprise baseline, lags online)
+        self._ema_shadows = [p.detach().clone() for p in self.predictor.parameters()]
+        # running surprise statistics (mu/sigma buffers), updated ONLY in training
+        self.register_buffer("mu", torch.zeros(1))
+        self.register_buffer("sigma", torch.ones(1))
+
+    @torch.no_grad()
+    def update_ema(self):
+        # shadow = decay*shadow + (1-decay)*param, elementwise per parameter
+        ...
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict]:
+        """x: [B, T, D] this block's own input (pre-norm hidden).
+        Returns (surprise [B, T], aux {h_hat, pred_loss})."""
+        # Causal shift: pred_t uses x_{t-1}; t=0 predicts from zeros (<start>).
+        x_prev = torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], dim=1)
+        x_hat = self._predict_with_ema(x_prev)              # stable baseline
+        abs_diff = (x - x_hat).abs().mean(dim=-1)           # [B,T]
+        if self.training:                                    # update mu/sigma only in train
+            ...
+        eps = torch.clamp(self.cfg.eps_scale * self.sigma.sqrt(), min=self.cfg.eps_min)
+        surprise = ((abs_diff - self.mu) / (self.sigma.sqrt() + eps)).clamp(0, self.cfg.surprise_max)
+        pred_online = self.predictor(x_prev)                 # online params train toward x
+        pred_loss = F.mse_loss(pred_online, x.detach())      # JEPA-style, stop-grad target
+        return surprise, {"h_hat": x_hat, "pred_loss": pred_loss}
+```
+
+Design notes for the coder:
+- **Ownership:** `MoMBlock` owns one `HiddenSurprisePredictor` when enabled
+  (config `router_surprise_scale > 0`), built per-layer. In `MoMBlock.forward`,
+  compute `surprise_i, aux = self.surprise_predictor(x)` from the block's own
+  input `x` and pass to `self.router(x, ..., surprise=surprise_i)`. The external
+  `surprise=` override on the block stays for probe/ablation (manual/manual signal
+  injection); the internal predictor is the default source. Per-layer predictors
+  are **independent by default**; a shared predictor across layers is an optional
+  config choice (default off for isolation).
+- EMA shadows: one deep copy per online parameter; `update_ema()` blends each.
+  Prediction ALWAYS uses the EMA shadows (stable baseline); the online `predictor`
+  is what backprop trains toward `x` via `pred_loss` (stop-grad on target).
+- `surprise_i` is a pure deterministic function of `x_{i,t-1}, x_{i,t}` in eval
+  mode (mu/sigma frozen) — this is what makes 7.3 testable.
+- Trainer (later task): call each layer's `update_ema()` each step and add the
+  sum of per-layer `pred_loss` (weighted) to the MoM objective. This step ships
+  the module + test only.
+
+### 7.3 Causality / leakage test — `tests/mom/test_surprise_predictor.py` (pure unit, no GPU)
+The test exercises one layer's predictor over its own input `x [B,T,D]`; the
+same assertion holds per layer. `x` is any causal hidden tensor the layer owns.
+1. **Future-invariance:** build `x [B,T,D]`, `p.eval()` (freeze mu/sigma), compute
+   `surprise_full`. Perturb strictly-future positions (`x_bad[:, t0:] += noise`).
+   Assert `torch.equal(surprise_full[:, :t0], surprise_bad[:, :t0])` and that
+   `surprise_bad[:, t0:]` differs. Proves no future leakage into `surprise_t`.
+2. **Strict shift correctness:** changing `x_t` changes `surprise_t` but NOT
+   `surprise_{t-1}` (pred at `t-1` used `x_{t-2}`, not `x_{t-1}`). Assert single
+   nonzero per-row effect.
+3. **Shape/sanity:** `surprise.shape == [B, T]`, values in `[0, surprise_max]`,
+   finite; `h_hat` shares `x`'s shape.
+4. **Determinism in eval:** two identical `eval()` forwards give
+   `torch.equal` surprise (buffers not updated).
+
+### 7.4 Acceptance before Stage 0 (MQAR spike)
+`pytest tests/mom/test_surprise_predictor.py` green AND `pytest tests/mom/` green
+with the module present but **unwired** (no trainer/experiment changes in this
+step). Only then wire surprise generation + run Stage 0.
