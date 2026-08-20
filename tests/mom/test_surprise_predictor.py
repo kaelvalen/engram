@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from mom.block import MoMBlock
 from mom.config import MoMConfig
+from mom.model import MoMLM
 from mom.surprise import SurprisePredictor
 
 
@@ -135,3 +136,49 @@ def test_block_wiring_runs_with_internal_predictor_and_override_wins():
     ext = torch.linspace(0.0, 5.0, 2 * 8).view(2, 8)
     _, _, rout_ext = block(x, surprise=ext)
     assert not torch.equal(rout_in.logits, rout_ext.logits)
+
+
+def test_predictor_actually_learns():
+    """The online head must genuinely reduce prediction error on a learnable
+    (periodic) sequence — guard against the 'predictor never trained' failure
+    where surprise would be a fixed random projection."""
+    torch.manual_seed(0)
+    D, T, B = 16, 48, 4
+    # periodic, hence predictable from x_{t-1}: P can fit it and MSE drops.
+    t = torch.arange(T).float()
+    x = torch.stack([torch.sin(0.5 * t - 0.3 * i) for i in range(D)], dim=-1)
+    x = x.unsqueeze(0).expand(B, T, D)
+    pred = SurprisePredictor(hidden_dim=D, predictor_hidden_dim=32).train()
+    opt = torch.optim.AdamW(pred.online.parameters(), lr=1e-2)
+
+    def mse():
+        return F.mse_loss(pred.predict_online(x), x.detach())
+
+    before = mse().item()
+    for _ in range(50):
+        opt.zero_grad()
+        loss = mse()
+        loss.backward()
+        opt.step()
+        pred.update_ema()
+    after = mse().item()
+    assert after < before * 0.5, f"predictor barely learns: {before:.4f} -> {after:.4f}"
+
+
+def test_model_returns_pred_loss_when_enabled():
+    """MoMLM forward accumulates an aux pred_loss when the predictor is on."""
+    torch.manual_seed(0)
+    cfg = _block_cfg(True)  # use_surprise_predictor=True
+    model = MoMLM(cfg, vocab_size=16)  # training mode by default
+    ids = torch.randint(0, 16, (2, 8))
+    out = model(ids)
+    assert "pred_loss" in out
+    assert torch.isfinite(out["pred_loss"]) and out["pred_loss"].item() >= 0
+
+
+def test_model_does_not_compute_pred_loss_in_eval():
+    torch.manual_seed(0)
+    model = MoMLM(_block_cfg(True), vocab_size=16).eval()
+    ids = torch.randint(0, 16, (2, 8))
+    out = model(ids)
+    assert out["pred_loss"].item() == 0.0  # gated on self.training

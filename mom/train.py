@@ -139,6 +139,8 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
             if is_mom:
                 aux, parts = mom_auxiliary_loss(out["routings"], cfg.lambda_bal, cfg.lambda_z)
                 loss = task_loss + aux
+                if cfg.use_surprise_predictor:
+                    loss = loss + cfg.surprise_pred_loss_weight * out["pred_loss"]
                 bal, z = float(parts["bal"]), float(parts["z"])
             else:
                 loss = task_loss
@@ -147,6 +149,11 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
         loss.backward()
         torch.nn.utils.clip_grad_norm_(params, optim["grad_clip"])
         opt.step()
+        if is_mom and cfg.use_surprise_predictor:
+            for block in model.blocks:
+                if block.surprise_predictor is not None:
+                    # EMA baseline lags the just-stepped online weights.
+                    block.surprise_predictor.update_ema()
 
         record = {
             "step": step,

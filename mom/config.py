@@ -33,6 +33,7 @@ class MoMConfig:
     straight_through: bool = False  # ST gate estimator, R4 fallback
     router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
     use_surprise_predictor: bool = False  # per-layer SurprisePredictor (design (b))
+    surprise_pred_loss_weight: float = 0.0  # aux MSE weight on predictor (per layer)
 
     # Shared expert (§3.7): one SSD instance always on, output added ungated.
     shared_expert: str | None = None  # None | "ssd"
@@ -83,6 +84,8 @@ class MoMConfig:
             raise ValueError("loss weights must be non-negative")
         if self.router_surprise_scale < 0:
             raise ValueError("router_surprise_scale must be non-negative")
+        if self.surprise_pred_loss_weight < 0:
+            raise ValueError("surprise_pred_loss_weight must be non-negative")
         if not (0 < self.s4_dt_min < self.s4_dt_max):
             raise ValueError("s4_dt_min must be < s4_dt_max")
 
