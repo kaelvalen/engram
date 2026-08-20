@@ -76,8 +76,6 @@ def test_modes_ignore_surprise():
         # Fresh router per call: the "random" mode consumes a seeded generator,
         # so a single instance advanced between calls would differ regardless.
         base = _router(K=3, k=2, mode=mode, surprise_scale=1.0, seed=0).forward(h)
-        with_s = _router(K=3, k=2, mode=mode, surprise_scale=1.0, seed=0).forward(
-            h, surprise=s
-        )
+        with_s = _router(K=3, k=2, mode=mode, surprise_scale=1.0, seed=0).forward(h, surprise=s)
         assert torch.equal(base.gates, with_s.gates)
         assert torch.equal(base.indices, with_s.indices)

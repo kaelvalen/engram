@@ -6,21 +6,21 @@ and bootstrap CI — the PTB-XL evaluation protocol, validated on synthetic data
 from __future__ import annotations
 
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
-from prism.training.loops import accuracy, evaluate_multilabel_auc
-from prism.training.metrics import bootstrap_auroc_ci
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
+from engram.training.loops import accuracy, evaluate_multilabel_auc
+from engram.training.metrics import bootstrap_auroc_ci
 from torch.utils.data import DataLoader, TensorDataset
 
 
 def _multilabel_model(num_classes=5):
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
         modalities=[ModalityConfig("ecg", 12, num_classes, multilabel=True)],
     )
-    return PRISMForClassification(cfg)
+    return ENGRAMForClassification(cfg)
 
 
 def test_multilabel_forward_uses_bce_and_backprops():

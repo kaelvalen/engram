@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.modules.ssd import SSDBlock, SSDMixer
+from engram.modules.ssd import SSDBlock, SSDMixer
 
 
 def _mixer(seed=0, **kw):

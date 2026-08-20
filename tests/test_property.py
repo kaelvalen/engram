@@ -7,10 +7,10 @@ fixed-shape tests miss.
 from __future__ import annotations
 
 import torch
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
 
 _SETTINGS = settings(
     max_examples=25,
@@ -20,7 +20,7 @@ _SETTINGS = settings(
 
 
 def _model(num_layers, ssm_kind, in_dim, n_cls):
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=16,
         num_heads=2,
         num_layers=num_layers,
@@ -28,7 +28,7 @@ def _model(num_layers, ssm_kind, in_dim, n_cls):
         ssm_kind=ssm_kind,
         modalities=[ModalityConfig("m", in_dim, n_cls)],
     )
-    return PRISMForClassification(cfg)
+    return ENGRAMForClassification(cfg)
 
 
 @_SETTINGS

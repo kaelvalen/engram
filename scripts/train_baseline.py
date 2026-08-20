@@ -9,17 +9,17 @@ import time
 
 import torch
 import torch.nn as nn
-from prism.baselines import ResNet1DClassifier, TransformerSequenceClassifier
-from prism.data.paths import resolve_ptbxl_root
-from prism.training.loops import accuracy, evaluate_macro_auc, evaluate_multilabel_auc
-from prism.training.utils import set_seed
+from engram.baselines import ResNet1DClassifier, TransformerSequenceClassifier
+from engram.data.paths import resolve_ptbxl_root
+from engram.training.loops import accuracy, evaluate_macro_auc, evaluate_multilabel_auc
+from engram.training.utils import set_seed
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 def _loaders(args: argparse.Namespace):
     if args.task == "ecg":
-        from prism.data.ecg import get_ecg_loaders
+        from engram.data.ecg import get_ecg_loaders
 
         root = resolve_ptbxl_root(args.data_root)
         # Any task other than the legacy single-label super-diagnostic is
@@ -34,7 +34,7 @@ def _loaders(args: argparse.Namespace):
             task=args.ecg_task,
         )
         return train_loader, val_loader, 12, train_loader.dataset.num_classes, ml
-    from prism.data.image import get_cifar_loaders
+    from engram.data.image import get_cifar_loaders
 
     patch_size = args.patch_size
     train_loader, val_loader = get_cifar_loaders(

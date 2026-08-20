@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PRISM benchmark + ablation matrix (locked before running, per the paper plan).
+# ENGRAM benchmark + ablation matrix (locked before running, per the paper plan).
 #
 # Reproduces every row of the paper tables. Datasets must be present under
 # $DATA_ROOT (see EXPERIMENTS.md). Each config is run over $SEEDS seeds; report
@@ -25,7 +25,7 @@ run () {  # run <name> <seed> <extra-args...>
   local extra=""
   case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
   echo ">>> [$name | seed=$seed] $* $extra"
-  PYTHONHASHSEED="$seed" prism-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
+  PYTHONHASHSEED="$seed" engram-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
 }
 
@@ -33,13 +33,13 @@ for SEED in $SEEDS; do
   # ---------------- Main table: architectures × modalities ----------------
   # PTB-XL super-diagnostic (primary), sCIFAR-10 (tertiary), Speech Commands (secondary).
   for MOD in ecg image audio; do
-    run "prism_hybrid_$MOD"   "$SEED" --modality "$MOD" --ssm-kind ssd                          # SSD + Delta 3:1
+    run "engram_hybrid_$MOD"   "$SEED" --modality "$MOD" --ssm-kind ssd                          # SSD + Delta 3:1
     run "mamba2_only_$MOD"    "$SEED" --modality "$MOD" --ssm-kind ssd   --block-pattern s4      # SSD only
     run "gateddelta_only_$MOD" "$SEED" --modality "$MOD"                  --block-pattern delta   # Delta only
-    run "prism_legacy_$MOD"   "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin      # S4D + Delta 3:1
+    run "engram_legacy_$MOD"   "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin      # S4D + Delta 3:1
   done
   # CNN / Transformer baselines (separate baseline trainer).
-  # Use the same full-signal window and multi-label protocol as PRISM so the
+  # Use the same full-signal window and multi-label protocol as ENGRAM so the
   # comparison is apples-to-apples.
   python scripts/train_baseline.py --model resnet1d --task ecg --epochs "$EPOCHS" --seed "$SEED" \
     --window-size 1000 --ecg-task superdiag --ecg-multilabel \

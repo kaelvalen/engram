@@ -10,15 +10,15 @@ Place under `$DATA_ROOT` (default `./datasets`):
 
 | Modality | Dataset | Where | Loader |
 |---|---|---|---|
-| ECG (primary) | PTB-XL 1.0.3 | physionet.org/content/ptb-xl/ → `datasets/ptbxl/` | `prism/data/ecg.py` |
-| Audio (secondary) | Speech Commands v2 | torchaudio download → `datasets/audio/` | `prism/data/audio.py` |
-| Vision (tertiary) | sequential CIFAR-10 | torchvision auto-download → `datasets/cifar/` | `prism/data/image.py` |
+| ECG (primary) | PTB-XL 1.0.3 | physionet.org/content/ptb-xl/ → `datasets/ptbxl/` | `engram/data/ecg.py` |
+| Audio (secondary) | Speech Commands v2 | torchaudio download → `datasets/audio/` | `engram/data/audio.py` |
+| Vision (tertiary) | sequential CIFAR-10 | torchvision auto-download → `datasets/cifar/` | `engram/data/image.py` |
 
 ## Primary metric
 
 PTB-XL is benchmarked with **macro one-vs-rest AUROC**, not accuracy
-(Strodthoff et al. 2020). Use `prism.training.metrics.roc_auc_ovr_macro` /
-`prism.training.loops.evaluate_macro_auc`. Target: match `xresnet1d101`
+(Strodthoff et al. 2020). Use `engram.training.metrics.roc_auc_ovr_macro` /
+`engram.training.loops.evaluate_macro_auc`. Target: match `xresnet1d101`
 (~0.928 macro AUC on 5-class super-diagnostic) within the ±0.005 bootstrap CI.
 
 **Use the full signal.** `--window-size` defaults to **1000** = the whole 10 s
@@ -115,8 +115,8 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
 ## Honest gaps / TODO before submission
 
 - **All six PTB-XL task groups ARE wired** (`--ecg-task superdiag|subdiag|diag|
-  form|rhythm|all`): multi-hot targets in `prism/data/ecg.py` via the pure,
-  unit-tested `prism/data/ptbxl_tasks.py` mapping, BCEWithLogits in `model.py`,
+  form|rhythm|all`): multi-hot targets in `engram/data/ecg.py` via the pure,
+  unit-tested `engram/data/ptbxl_tasks.py` mapping, BCEWithLogits in `model.py`,
   accumulating macro AUROC in `loops.evaluate_multilabel_auc`, checkpoint
   selection on `val_macro_auc`, and `num_classes` derived from the task vocab.
   Each non-superdiag task is inherently multi-label. The mapping logic is tested
@@ -148,7 +148,7 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
 The MoM router (`mom/router.py`) currently routes on `z_t = W_r h_t` alone — a
 plain learned linear projection (Switch-Transformer style) with **no signal for
 "how well is the recurrent state predicting this token."** The `SurpriseEstimator`
-in `prism/saber/saber.py` is exactly the missing quantity: it returns a clamped,
+in `engram/saber/saber.py` is exactly the missing quantity: it returns a clamped,
 normalized per-token scalar measuring how far each token deviates from the
 recurrent state's prediction.
 

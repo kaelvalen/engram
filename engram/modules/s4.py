@@ -15,9 +15,9 @@ from .scan import linear_recurrence
 def parallel_scan(a: torch.Tensor, b: torch.Tensor, backend: str = "reference") -> torch.Tensor:
     """Parallel prefix scan: h_t = a_t * h_{t-1} + b_t. a, b: [B, H, T, N].
 
-    Thin wrapper over :mod:`prism.modules.scan`. The hand-derived Blelloch
+    Thin wrapper over :mod:`engram.modules.scan`. The hand-derived Blelloch
     up/down-sweep that originally lived here is preserved in
-    :mod:`prism.modules.scan_reference` for teaching and equivalence tests; the
+    :mod:`engram.modules.scan_reference` for teaching and equivalence tests; the
     production scan no longer uses strided indexed assignment.
     """
     return linear_recurrence(a, b, backend=backend)

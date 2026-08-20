@@ -1,5 +1,5 @@
 {
-  description = "PRISM — modality-portable hybrid linear-recurrent (SSD + Gated Delta) backbone";
+  description = "ENGRAM — modality-portable hybrid linear-recurrent (SSD + Gated Delta) backbone";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -32,7 +32,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          name = "prism-dev";
+          name = "engram-dev";
 
           buildInputs = with pkgs; [
             uv
@@ -74,7 +74,7 @@
 
             # Keep the dev environment in sync with pyproject.toml.  uv is
             # incremental, so repeated shell entries are cheap.
-            echo "Syncing PRISM dependencies ..."
+            echo "Syncing ENGRAM dependencies ..."
             uv pip install -e ".[train,test,dev]"
 
             # flash-linear-attention is an optional production backend.  Its
@@ -83,11 +83,11 @@
             if ! uv pip install "flash-linear-attention>=0.3.2,<0.4"; then
               echo ""
               echo "WARNING: flash-linear-attention could not be installed."
-              echo "         PRISM will fall back to pure-PyTorch reference paths."
+              echo "         ENGRAM will fall back to pure-PyTorch reference paths."
             fi
 
             echo ""
-            echo "PRISM dev shell ready."
+            echo "ENGRAM dev shell ready."
             echo "  Python: $(python --version)"
             echo "  uv: $(uv --version)"
             if command -v nvcc >/dev/null 2>&1; then

@@ -1,8 +1,8 @@
 """MoM — Mixture of Memory Primitives.
 
-Replaces the fixed hybrid block at each PRISM layer with a bank of
+Replaces the fixed hybrid block at each ENGRAM layer with a bank of
 heterogeneous memory primitives (SSD, GDR; SWA in v2) and a per-token
-router.  See MoM-Architecture-Spec.md; PRISM mixers are consumed through
+router.  See MoM-Architecture-Spec.md; ENGRAM mixers are consumed through
 mom.registry, never modified beyond additive write-mask flags.
 """
 

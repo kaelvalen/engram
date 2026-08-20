@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
-from prism.modules.attention import SWABlock
-from prism.modules.delta import DeltaBlock
-from prism.modules.s4 import S4Block
-from prism.modules.ssd import SSDBlock
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
+from engram.modules.attention import SWABlock
+from engram.modules.delta import DeltaBlock
+from engram.modules.s4 import S4Block
+from engram.modules.ssd import SSDBlock
 
 BLOCKS = {
     "ssd": lambda: SSDBlock(hidden_dim=32, num_heads=4, state_dim=16),
@@ -34,7 +34,7 @@ def test_block_preserves_shape(name, B, L):
 
 
 def test_modality_projection_and_heads():
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
@@ -44,7 +44,7 @@ def test_modality_projection_and_heads():
             ModalityConfig("audio", 64, 35),
         ],
     )
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     for name, in_dim, n_cls in [("ecg", 12, 5), ("image", 48, 10), ("audio", 64, 35)]:
         x = torch.randn(2, 16, in_dim)
         out = model(x, modality=name)

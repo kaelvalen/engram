@@ -6,21 +6,21 @@ from typing import Any
 
 import torch
 
-from prism.config import ModalityConfig, PRISMConfig
+from engram.config import ENGRAMConfig, ModalityConfig
 
 logger = logging.getLogger(__name__)
 
 
-def cfg_to_dict(cfg: PRISMConfig) -> dict[str, Any]:
+def cfg_to_dict(cfg: ENGRAMConfig) -> dict[str, Any]:
     from dataclasses import asdict
 
     return asdict(cfg)
 
 
-def cfg_from_dict(d: dict[str, Any]) -> PRISMConfig:
+def cfg_from_dict(d: dict[str, Any]) -> ENGRAMConfig:
     d = dict(d)
     modalities = [ModalityConfig(**m) for m in d.pop("modalities", [])]
-    return PRISMConfig(**d, modalities=modalities)
+    return ENGRAMConfig(**d, modalities=modalities)
 
 
 def save_checkpoint(
@@ -28,7 +28,7 @@ def save_checkpoint(
     *,
     epoch: int,
     model_state: dict[str, Any],
-    cfg: PRISMConfig,
+    cfg: ENGRAMConfig,
     metrics: dict[str, Any] | None = None,
     optimizer_state: dict[str, Any] | None = None,
     scheduler_state: dict[str, Any] | None = None,

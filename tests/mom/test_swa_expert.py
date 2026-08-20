@@ -71,7 +71,7 @@ def _swa_masked_reference(expert, x, mask, state=None):
             # as the masked path: cumsum-1, clamped at 0)
             rank = int(mask[b, : t + 1].sum()) - 1
             pos = max(int(pos_prev[b]) + rank, 0)
-            from prism.modules.attention import _apply_rope, _build_rope_cache
+            from engram.modules.attention import _apply_rope, _build_rope_cache
 
             cos, sin = _build_rope_cache(int(pos) + 1, Dh, x.device)
             cos = cos[int(pos) : int(pos) + 1].to(q.dtype)  # [1, Dh]
@@ -93,7 +93,7 @@ def _swa_masked_reference(expert, x, mask, state=None):
     new_pos = pos_prev + mask.long().sum(dim=1)
     k_out = torch.zeros(B, H, W, Dh, dtype=x.dtype)
     v_out = torch.zeros(B, H, W, Dh, dtype=x.dtype)
-    from prism.modules.attention import SWAState
+    from engram.modules.attention import SWAState
 
     for b in range(B):
         if cache_k[b] is not None:

@@ -7,9 +7,9 @@ miss. All inputs are tiny so the double-precision checks stay fast.
 from __future__ import annotations
 
 import torch
-from prism.modules.delta import GatedDeltaRule
-from prism.modules.scan import hillis_steele_recurrence, seq_recurrence
-from prism.modules.ssd import SSDMixer
+from engram.modules.delta import GatedDeltaRule
+from engram.modules.scan import hillis_steele_recurrence, seq_recurrence
+from engram.modules.ssd import SSDMixer
 
 
 def test_gradcheck_hillis_steele_scan():

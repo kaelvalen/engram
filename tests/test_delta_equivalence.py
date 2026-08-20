@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.modules.delta import GatedDeltaRule, _load_fla
+from engram.modules.delta import GatedDeltaRule, _load_fla
 
 _FLA = _load_fla()
 

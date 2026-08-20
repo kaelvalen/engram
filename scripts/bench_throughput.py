@@ -14,8 +14,8 @@ import argparse
 import time
 
 import torch
-from prism.modules.delta import GatedDeltaRule, _load_fla
-from prism.modules.ssd import SSDMixer
+from engram.modules.delta import GatedDeltaRule, _load_fla
+from engram.modules.ssd import SSDMixer
 
 
 def _timed(fn, iters: int, warmup: int, device: str) -> float:

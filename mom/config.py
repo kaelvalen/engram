@@ -2,7 +2,7 @@
 
 Single source of truth for the MoM architecture: expert bank, router,
 masked-execution semantics and stability objectives.  Expert hyperparameters
-default to the corresponding PRISM block values (§3.2).
+default to the corresponding ENGRAM block values (§3.2).
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class MoMConfig:
     # Masked-execution semantics (§3.4).  D1: decay applies on every step
     # (default) or the state freezes on a miss.  For GDR the spec text
     # requires exact pass-through on a miss (its equations carry no α gate),
-    # hence a separate default of False for PRISM's α forget gate.
+    # hence a separate default of False for ENGRAM's α forget gate.
     decay_on_skip: bool = True  # D1, applies to SSD's a_t
     gdr_decay_on_skip: bool = False  # applies to GDR's α_t (§3.4 pass-through)
 
@@ -47,7 +47,7 @@ class MoMConfig:
     lambda_bal: float = 1e-2
     lambda_z: float = 1e-3
 
-    # Expert hyperparameters — PRISM defaults (§3.2)
+    # Expert hyperparameters — ENGRAM defaults (§3.2)
     ssd_state_dim: int = 64
     s4_dt_min: float = 0.001
     s4_dt_max: float = 0.1
@@ -58,7 +58,7 @@ class MoMConfig:
     delta_backend: str = "reference"
     swa_window: int = 512  # v2
 
-    # Shared block anatomy (PRISM-exact residual/pre-norm structure, §3.5)
+    # Shared block anatomy (ENGRAM-exact residual/pre-norm structure, §3.5)
     conv_kernel_size: int = 4
     ffn_expand: int = 2
     dropout: float = 0.0

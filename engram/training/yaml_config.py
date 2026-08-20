@@ -4,11 +4,11 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
-from prism.config import PRISMConfig
+from engram.config import ENGRAMConfig
 
-# PRISMConfig fields that may appear in YAML (under the 'model' section or flat).
-_MODEL_KEYS = {f.name for f in fields(PRISMConfig)}
-# CLI-only keys that are valid in YAML but never become PRISMConfig fields.
+# ENGRAMConfig fields that may appear in YAML (under the 'model' section or flat).
+_MODEL_KEYS = {f.name for f in fields(ENGRAMConfig)}
+# CLI-only keys that are valid in YAML but never become ENGRAMConfig fields.
 _CLI_ONLY_KEYS = {
     "modality",
     "mode",
@@ -41,7 +41,7 @@ _CLI_ONLY_KEYS = {
 }
 KNOWN_KEYS = _MODEL_KEYS | _CLI_ONLY_KEYS
 # `layer_pattern` is a CLI alias that is translated to `block_pattern` before the
-# config is built; it is intentionally NOT a PRISMConfig field.
+# config is built; it is intentionally NOT a ENGRAMConfig field.
 _TOP_LEVEL_ALLOWED = KNOWN_KEYS | {"train", "model", "modalities"}
 
 

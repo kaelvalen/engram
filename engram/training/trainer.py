@@ -9,8 +9,8 @@ import torch
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from prism.config import PRISMConfig
-from prism.model import PRISMForClassification
+from engram.config import ENGRAMConfig
+from engram.model import ENGRAMForClassification
 
 from .checkpoint import cfg_to_dict, load_checkpoint, save_checkpoint
 from .loops import evaluate_epoch, train_epoch
@@ -61,8 +61,8 @@ class Trainer:
 
     def __init__(
         self,
-        model: PRISMForClassification,
-        cfg: PRISMConfig,
+        model: ENGRAMForClassification,
+        cfg: ENGRAMConfig,
         *,
         device: torch.device,
         tcfg: TrainerConfig | None = None,

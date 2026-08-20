@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from prism.saber import SABER, SABERBackbone, SABERConfig, SABERTrainer
-from prism.saber.diagnostics import SABERRecovery
+from engram.saber import SABER, SABERBackbone, SABERConfig, SABERTrainer
+from engram.saber.diagnostics import SABERRecovery
 
 
 def _cfg(**kw):
@@ -40,7 +40,7 @@ def _saber(cfg=None, seed=0, input_dim=12):
 
 
 class _ToyBackbone(nn.Module):
-    """Minimal (B,T,D) → (B,T,D) backbone with the PRISM return contract."""
+    """Minimal (B,T,D) → (B,T,D) backbone with the ENGRAM return contract."""
 
     def __init__(self, dim):
         super().__init__()

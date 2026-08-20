@@ -1,4 +1,4 @@
-"""PRISM — ECG inference and evaluation.
+"""ENGRAM — ECG inference and evaluation.
 
 Usage:
     python scripts/infer_ecg.py --checkpoint output/best_ecg.pt --ptbxl-test
@@ -15,10 +15,10 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from prism.data.ecg import _fit_window
-from prism.data.paths import resolve_ptbxl_root
-from prism.inference import load_model
-from prism.training.loops import evaluate_macro_auc, evaluate_multilabel_auc
+from engram.data.ecg import _fit_window
+from engram.data.paths import resolve_ptbxl_root
+from engram.inference import load_model
+from engram.training.loops import evaluate_macro_auc, evaluate_multilabel_auc
 
 CLASSES = ["NORM", "MI", "STTC", "CD", "HYP"]
 CLASS_FULL = {
@@ -88,7 +88,7 @@ def eval_ptbxl(
     Multi-label tasks report AUROC; the legacy single-label super-diagnostic
     task also reports accuracy for backward compatibility.
     """
-    from prism.data.ecg import get_ecg_loaders
+    from engram.data.ecg import get_ecg_loaders
 
     root = resolve_ptbxl_root(data_root)
     multilabel = task != "superdiag"
@@ -156,7 +156,7 @@ def eval_ptbxl(
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="PRISM ECG inference")
+    parser = argparse.ArgumentParser(description="ENGRAM ECG inference")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--ptbxl-test", action="store_true", help="Evaluate on PTB-XL test set")
     parser.add_argument("--signal", type=str, default=None, help="Path to a single .npy signal")

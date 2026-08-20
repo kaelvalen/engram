@@ -3,9 +3,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
-from prism.data.audio import SyntheticMelPatchDataset
-from prism.data.ecg import _check_ecg_failure_rate, _fit_window
-from prism.data.image import patchify
+from engram.data.audio import SyntheticMelPatchDataset
+from engram.data.ecg import _check_ecg_failure_rate, _fit_window
+from engram.data.image import patchify
 
 # ── ECG failure gate ──────────────────────────────────────────────────────────
 

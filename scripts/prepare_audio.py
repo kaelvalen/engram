@@ -1,5 +1,5 @@
 """Download Speech Commands v0.02 and build the mel-patch dumps that
-``prism/data/audio.get_audio_loaders(synthetic=False)`` expects.
+``engram/data/audio.get_audio_loaders(synthetic=False)`` expects.
 
 Codec-free path (NixOS-friendly): the tarball is fetched with urllib, wav
 files are decoded with the stdlib ``wave`` module (16-bit PCM @ 16 kHz),

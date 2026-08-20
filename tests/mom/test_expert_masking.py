@@ -1,4 +1,4 @@
-"""Additive write-mask flags on the PRISM mixers (MoM spec §3.4).
+"""Additive write-mask flags on the ENGRAM mixers (MoM spec §3.4).
 
 The MoM router selects a memory primitive per token.  Under dense-masked
 execution the routed expert must behave *as if it only saw its own
@@ -11,7 +11,7 @@ SSD  — the write term is zeroed on a miss, so the update is
 GDR  — ``k, v, β`` are masked, so the transition ``(I − β̃ k̃ k̃ᵀ)`` collapses
        to identity and the write vanishes.  The spec's GDR equation
        (Appendix A) has no α forget gate; to honour §3.4's "state passes
-       through exactly" on PRISM's gated variant, α is neutralised to 1 on a
+       through exactly" on ENGRAM's gated variant, α is neutralised to 1 on a
        miss when ``freeze_on_mask=True`` (MoM's default for GDR).
 
 These tests pin the masked semantics against explicit per-token sequential
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
-from prism.modules.delta import GatedDeltaRule
-from prism.modules.ssd import SSDMixer
+from engram.modules.delta import GatedDeltaRule
+from engram.modules.ssd import SSDMixer
 
 RTOL = 1e-10
 ATOL = 1e-12
@@ -201,7 +201,7 @@ def test_gdr_miss_passes_state_through_exactly_when_frozen():
     x = torch.randn(2, 12, 16, dtype=torch.float64)
     s0 = torch.randn(2, 2, 8, 8, dtype=torch.float64) * 0.1
     zero = torch.zeros(2, 12, dtype=torch.float64)
-    from prism.modules.delta import DeltaState
+    from engram.modules.delta import DeltaState
 
     _, s = m(x, DeltaState(S=s0), write_mask=zero, freeze_on_mask=True)
     torch.testing.assert_close(s.S, s0, rtol=0.0, atol=0.0)
@@ -212,7 +212,7 @@ def test_gdr_masked_decode_step_matches_reference():
     x = torch.randn(2, 1, 16, dtype=torch.float64)
     mask = _mask(2, 1)
     s0 = torch.randn(2, 2, 8, 8, dtype=torch.float64) * 0.1
-    from prism.modules.delta import DeltaState
+    from engram.modules.delta import DeltaState
 
     y, s = m(x, DeltaState(S=s0), write_mask=mask, freeze_on_mask=True)
     y_ref, s_ref = _gdr_masked_reference(m, x, mask, freeze_on_mask=True, state=DeltaState(S=s0))

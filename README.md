@@ -12,7 +12,7 @@
 > answer to *when a compressed recurrent state suffices vs. when a surprising
 > token must be written explicitly* (see [MoM](#mom--mixture-of-memory-primitives-mom)).
 >
-> *The Python package is still `prism` internally; "ENGRAM" is the project and
+> *The Python package is still `engram` internally; "ENGRAM" is the project and
 > paper name.*
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
@@ -41,8 +41,8 @@ The backbone interleaves two complementary mixers (plus optional attention):
   bit-exact with the full-sequence forward (fp64-tested). Used for H1-style
   hybrid ablations and as MoM's third expert.
 
-The per-layer role tokens are defined in `prism.layer_tokens` as `("s4", "delta",
-"swa")`. `prism.modules.block.BLOCK_REGISTRY` maps each token to a builder
+The per-layer role tokens are defined in `engram.layer_tokens` as `("s4", "delta",
+"swa")`. `engram.modules.block.BLOCK_REGISTRY` maps each token to a builder
 function; new mixers can be registered with `@register_block("token")` without
 changing the core config or model code.
 
@@ -81,8 +81,8 @@ at ~250 K params, 1 seed, 2 epochs.
 ### Option A: Nix + uv (recommended for GPU development)
 
 ```bash
-git clone https://github.com/kaelvalen/prism.git
-cd prism
+git clone https://github.com/kaelvalen/engram.git
+cd engram
 nix develop
 ```
 
@@ -94,8 +94,8 @@ against your system NVIDIA driver.
 ### Option B: pip
 
 ```bash
-git clone https://github.com/kaelvalen/prism.git
-cd prism
+git clone https://github.com/kaelvalen/engram.git
+cd engram
 pip install -e ".[train,test]"      # CPU-friendly: pure-PyTorch reference paths
 pip install -e ".[gpu]"             # optional Triton kernels (FLA, mamba-ssm)
 ```
@@ -122,19 +122,21 @@ Verified working on NixOS + RTX 5060 (torch 2.13+cu130, FLA 0.3.2,
 
 ```python
 import torch
-from prism import PRISMConfig, ModalityConfig, PRISMForClassification
+from engram import ENGRAMConfig, ModalityConfig, ENGRAMForClassification
 
-cfg = PRISMConfig(
-    hidden_dim=256, num_heads=8, num_layers=12,   # ~8M params, SSD+Delta 3:1
-    ssm_kind="ssd",                               # "ssd" (default) | "s4d_legacy"
+cfg = ENGRAMConfig(
+    hidden_dim=256,
+    num_heads=8,
+    num_layers=12,  # ~8M params, SSD+Delta 3:1
+    ssm_kind="ssd",  # "ssd" (default) | "s4d_legacy"
     modalities=[
-        ModalityConfig(name="ecg",   input_dim=12, num_classes=5),
+        ModalityConfig(name="ecg", input_dim=12, num_classes=5),
         ModalityConfig(name="image", input_dim=48, num_classes=10),
     ],
 )
-model = PRISMForClassification(cfg)
+model = ENGRAMForClassification(cfg)
 
-ecg = torch.randn(4, 1000, 12)                    # 12-lead ECG
+ecg = torch.randn(4, 1000, 12)  # 12-lead ECG
 out = model(ecg, modality="ecg", labels=torch.randint(0, 5, (4,)))
 print(out["loss"].item())
 ```
@@ -142,8 +144,8 @@ print(out["loss"].item())
 The layer mix is fully configurable:
 
 ```python
-PRISMConfig(num_layers=12, block_pattern="s4,s4,s4,swa, s4,s4,s4,swa, s4,s4,s4,swa")  # H1-style
-PRISMConfig(num_layers=4,  force_block_type="delta")                                  # all-delta ablation
+ENGRAMConfig(num_layers=12, block_pattern="s4,s4,s4,swa, s4,s4,s4,swa, s4,s4,s4,swa")  # H1-style
+ENGRAMConfig(num_layers=4, force_block_type="delta")  # all-delta ablation
 ```
 
 ## Reproducing the paper
@@ -162,7 +164,7 @@ compute budget are in [EXPERIMENTS.md](EXPERIMENTS.md).
 by `python scripts/prepare_audio.py --source hf` (codec-free path that also
 works behind TLS-intercepting proxies); output goes to `datasets/audio/{train,val}.pt`
 (30,769 train + 7,777 val samples over the 10 core commands) and is consumed by
-`prism/data/audio.get_audio_loaders(synthetic=False)`.
+`engram/data/audio.get_audio_loaders(synthetic=False)`.
 
 ## MoM — Mixture of Memory Primitives (`mom/`)
 
@@ -179,7 +181,7 @@ deviates from the recurrent state's prediction — so routing can ask *"is this
 token surprising enough to write explicitly?"* before choosing a primitive.
 
 - `mom/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes; optional surprise feature via `surprise_scale`)
-- `mom/block.py` — MoMBlock: PRISM-exact residual/pre-norm anatomy + expert bank + router
+- `mom/block.py` — MoMBlock: ENGRAM-exact residual/pre-norm anatomy + expert bank + router
 - `mom/registry.py` — expert registry (`ssd`, `gdr`, `swa`), masked-execution contract
 - `mom/losses.py` — Switch load-balancing + router z-loss (§3.7 stability objectives)
 - `mom/baselines.py` — B1 fixed-3:1 hybrid, B2 SSD-only, B3 GDR-only, B4/B5 frozen routers
@@ -209,7 +211,7 @@ The failure signature above (uniform-ish routing dilutes GDR on pure-recall)
 points at a **weak routing signal** as much as a capacity limit: `z_t = W_r h_t`
 carries no information about how well the recurrent state is predicting the
 current token. The fix under test feeds a **normalized surprise estimator**
-(EMA predictor + surprise scalar, in `prism/saber/`) into the router as an extra
+(EMA predictor + surprise scalar, in `engram/saber/`) into the router as an extra
 per-token feature, so primitive choice can be driven by "is this token
 surprising, i.e. worth an explicit write?"
 
@@ -223,7 +225,7 @@ surprising, i.e. worth an explicit write?"
   *planned experiment*: no improvement is claimed before a run exists
   (see [EXPERIMENTS.md](EXPERIMENTS.md)).
 
-`prism/saber/` supplies this signal: latent encoder → capacity-limited GRU
+`engram/saber/` supplies this signal: latent encoder → capacity-limited GRU
 policy → EMA predictor → normalized surprise → adaptive budget → sparse slot
 readout, with InfoNCE + JEPA-style losses, a 3-phase trainer, and diagnostics
 (R1–R5). SABER is no longer a standalone "experimental" effort — it is the
@@ -283,7 +285,7 @@ row above is the current state of the pipeline, not a submission number.
 Input (any modality)  [B, T, input_dim]
         │  ModalityProjection  Linear(input_dim → hidden_dim)   ← per-modality
         ▼
-PRISMBackbone   (block_pattern of s4 / delta / swa)
+ENGRAMBackbone   (block_pattern of s4 / delta / swa)
    s4    → SSDBlock     RMSNorm→Conv→SSD(selective scan)→res ; RMSNorm→SwiGLU→res
    delta → DeltaBlock   RMSNorm→Conv→GatedDeltaRule→res       ; RMSNorm→SwiGLU→res
    swa   → SWABlock     RMSNorm→SlidingWindowAttn(RoPE)→res   ; RMSNorm→SwiGLU→res
@@ -291,20 +293,20 @@ PRISMBackbone   (block_pattern of s4 / delta / swa)
         ▼  PerModalityHead  LayerNorm → Linear → logits
 ```
 
-**SSD mixer** (`prism/modules/ssd.py`) — Mamba-2 state-space duality. `A` is a
+**SSD mixer** (`engram/modules/ssd.py`) — Mamba-2 state-space duality. `A` is a
 scalar per head (`A=-exp(A_log)`), decay `a_t = exp(Δ_t·A)`, and crucially the
 input is kept **per-channel** (`h_t = a_t h_{t-1} + (Δ_t x_t) ⊗ B_t`,
 `y_t = ⟨h_t, C_t⟩ + D x_t`). No mean-over-Dₕ collapse — that was the central
 weakness of the original S4D block, and the most important ablation in the
 paper (`ssm_kind="ssd"` vs `"s4d_legacy"`).
 
-**Parallel scan** (`prism/modules/scan.py`) — the recurrence is solved with
+**Parallel scan** (`engram/modules/scan.py`) — the recurrence is solved with
 `torch.associative_scan` (fused HOP) or a vectorized two-buffer Hillis-Steele
 fallback; neither uses strided indexed assignment. The original hand-derived
 Blelloch up/down-sweep is preserved in `scan_reference.py` for teaching and as
 an equivalence anchor.
 
-**Gated delta rule** (`prism/modules/delta.py`) — `backend="reference"` is the
+**Gated delta rule** (`engram/modules/delta.py`) — `backend="reference"` is the
 from-scratch chunked solve in the **division-free, log-space decay-ratio form**
 (all coefficients `γ_t/γ_s ≤ 1`): the earlier `1/ᾱ` formulation underflowed to
 inf and NaN'd in fp32 once the forget gate learned `α ≪ 1`. `backend="fla"`
@@ -312,7 +314,7 @@ calls FLA's `chunk_gated_delta_rule` Triton kernel with the correct
 transposed-state mapping ((dk, dv) ↔ (dv, dk)) and falls back to the reference
 if FLA/CUDA are unavailable.
 
-**Sliding-window attention** (`prism/modules/attention.py`) — RoPE, causal
+**Sliding-window attention** (`engram/modules/attention.py`) — RoPE, causal
 window, and a streaming KV-cache (`SWAState`: last `window` RoPE-applied
 keys/values + absolute position). Chunked and token-by-token decode are
 fp64-exact with full-sequence forward; the MoM masked path slides the window
@@ -335,8 +337,8 @@ fixed 2026-07); it is skipped when the Triton kernel cannot execute.
 ```bash
 # inside nix develop, or with the pip venv activated
 pytest                       # 270+ passed, 1 skipped (FLA probe skips when Triton unavailable)
-ruff check prism mom tests scripts train.py
-ruff format --check prism mom tests scripts train.py
+ruff check engram mom tests scripts train.py
+ruff format --check engram mom tests scripts train.py
 ```
 
 - **Numerical equivalence** — scan/delta backends vs sequential reference; MoM dense-masked ≡ token-by-token reference at fp64 `rtol=1e-10`.
@@ -371,8 +373,8 @@ MoM flags live in `mom/config.py` (`experts`, `top_k`, `router_mode`,
 ## Repository layout
 
 ```
-prism/
-├── config.py                 # PRISMConfig (ssm_kind, block_pattern, backends, …)
+engram/
+├── config.py                 # ENGRAMConfig (ssm_kind, block_pattern, backends, …)
 ├── layer_tokens.py           # dependency-free {s4, delta, swa} role tokens
 ├── model.py                  # projection → backbone → per-modality head
 ├── inference.py              # shared checkpoint loader for inference scripts
@@ -383,7 +385,7 @@ prism/
 │   ├── attention.py          # SlidingWindowAttention / SWABlock (RoPE, KV-cache)
 │   ├── scan.py               # associative_scan + two-buffer Hillis-Steele backends
 │   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
-│   └── block.py              # BLOCK_REGISTRY + PRISMBlock protocol + build_block dispatch
+│   └── block.py              # BLOCK_REGISTRY + ENGRAMBlock protocol + build_block dispatch
 ├── saber/                    # surprise-adaptive memory layer (supplies surprise → MoM routing)
 ├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
 ├── baselines/                # ResNet1D, small Transformer
@@ -421,7 +423,7 @@ still needs doing before submission.
   title  = {ENGRAM: a modality-portable hybrid linear-recurrent backbone},
   author = {Hakbilen, Mehmet Arda},
   year   = {2026},
-  note   = {https://github.com/kaelvalen/prism}
+  note   = {https://github.com/kaelvalen/engram}
 }
 ```
 

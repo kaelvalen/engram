@@ -5,7 +5,7 @@ import logging
 import torch
 import torch.nn as nn
 
-from .config import ModalityConfig, PRISMConfig
+from .config import ENGRAMConfig, ModalityConfig
 from .modules.block import BlockState, build_block, forward_block
 
 logger = logging.getLogger(__name__)
@@ -24,10 +24,10 @@ class ModalityProjection(nn.Module):
         return self.projections[modality](x)
 
 
-class PRISMBackbone(nn.Module):
+class ENGRAMBackbone(nn.Module):
     """Modality-agnostic S4+Delta interleaved backbone."""
 
-    def __init__(self, cfg: PRISMConfig):
+    def __init__(self, cfg: ENGRAMConfig):
         super().__init__()
         self.cfg = cfg
         self.pattern = cfg.layer_pattern()
@@ -73,9 +73,9 @@ class PerModalityHead(nn.Module):
         return self.heads[modality](self.drop(x))
 
 
-class PRISMForClassification(nn.Module):
+class ENGRAMForClassification(nn.Module):
     """
-    Full PRISM model for classification tasks.
+    Full ENGRAM model for classification tasks.
 
     Forward:
         x        : [B, T, input_dim]  — raw signal / patch sequence
@@ -86,11 +86,11 @@ class PRISMForClassification(nn.Module):
         dict(logits, loss?)
     """
 
-    def __init__(self, cfg: PRISMConfig):
+    def __init__(self, cfg: ENGRAMConfig):
         super().__init__()
         self.cfg = cfg
         self.projection = ModalityProjection(cfg.modalities, cfg.hidden_dim)
-        self.backbone = PRISMBackbone(cfg)
+        self.backbone = ENGRAMBackbone(cfg)
         self.head = PerModalityHead(cfg.modalities, cfg.hidden_dim, dropout=cfg.dropout)
         self.norm = nn.ModuleDict({m.name: nn.LayerNorm(cfg.hidden_dim) for m in cfg.modalities})
 

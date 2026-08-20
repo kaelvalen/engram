@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
 
 # Recorded golden initial-forward losses (seed 1234 model, seed 99 data).
 GOLDEN_LOSS0 = {"ssd": 1.606000, "s4d_legacy": 1.817113}
@@ -17,7 +17,7 @@ GOLDEN_LOSS0 = {"ssd": 1.606000, "s4d_legacy": 1.817113}
 
 def _build(ssm_kind):
     torch.manual_seed(1234)
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
@@ -26,7 +26,7 @@ def _build(ssm_kind):
         scan_backend="reference",
         modalities=[ModalityConfig("ecg", 12, 5)],
     )
-    return PRISMForClassification(cfg)
+    return ENGRAMForClassification(cfg)
 
 
 def _data():

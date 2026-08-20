@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-from prism.training.metrics import binary_auroc, multilabel_auroc_macro, roc_auc_ovr_macro
+from engram.training.metrics import binary_auroc, multilabel_auroc_macro, roc_auc_ovr_macro
 
 
 def test_perfect_separation():

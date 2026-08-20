@@ -8,8 +8,8 @@ from typing import Any, Type
 
 import torch
 
-from prism.model import PRISMForClassification
-from prism.training.checkpoint import cfg_from_dict, cfg_to_dict
+from engram.model import ENGRAMForClassification
+from engram.training.checkpoint import cfg_from_dict, cfg_to_dict
 
 
 def is_transformers_available() -> bool:
@@ -21,7 +21,7 @@ def is_transformers_available() -> bool:
         return False
 
 
-def save_pretrained_folder(model: PRISMForClassification, save_directory: str | Path) -> None:
+def save_pretrained_folder(model: ENGRAMForClassification, save_directory: str | Path) -> None:
     """Write ``config.json`` + ``pytorch_model.bin`` (layout compatible with HF tooling)."""
     save_directory = Path(save_directory)
     save_directory.mkdir(parents=True, exist_ok=True)
@@ -34,10 +34,10 @@ def load_pretrained_folder(
     load_directory: str | Path,
     *,
     map_location: str | torch.device | None = None,
-) -> PRISMForClassification:
+) -> ENGRAMForClassification:
     load_directory = Path(load_directory)
     cfg = cfg_from_dict(json.loads((load_directory / "config.json").read_text(encoding="utf-8")))
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     weights_path = load_directory / "pytorch_model.bin"
     try:
         state = torch.load(weights_path, map_location=map_location, weights_only=True)
@@ -47,30 +47,30 @@ def load_pretrained_folder(
     return model
 
 
-def get_prism_hf_classes() -> tuple[Type[Any], Type[Any]] | None:
-    """Return ``(PRISMConfigHF, PRISMPreTrainedForClassification)`` or ``None`` if transformers is missing."""
+def get_engram_hf_classes() -> tuple[Type[Any], Type[Any]] | None:
+    """Return ``(ENGRAMConfigHF, ENGRAMPreTrainedForClassification)`` or ``None`` if transformers is missing."""
     if not is_transformers_available():
         return None
     from transformers import PretrainedConfig, PreTrainedModel
 
-    class PRISMConfigHF(PretrainedConfig):
-        model_type = "prism"
+    class ENGRAMConfigHF(PretrainedConfig):
+        model_type = "engram"
 
-        def __init__(self, prism_cfg_dict: dict[str, Any] | None = None, **kwargs: Any):
+        def __init__(self, engram_cfg_dict: dict[str, Any] | None = None, **kwargs: Any):
             super().__init__(**kwargs)
-            self.prism_cfg_dict: dict[str, Any] = prism_cfg_dict or {}
+            self.engram_cfg_dict: dict[str, Any] = engram_cfg_dict or {}
 
-    class PRISMPreTrainedForClassification(PreTrainedModel):
-        config_class = PRISMConfigHF
+    class ENGRAMPreTrainedForClassification(PreTrainedModel):
+        config_class = ENGRAMConfigHF
 
-        def __init__(self, config: PRISMConfigHF):
+        def __init__(self, config: ENGRAMConfigHF):
             super().__init__(config)
-            pcfg = cfg_from_dict(dict(config.prism_cfg_dict))
-            self.prism = PRISMForClassification(pcfg)
+            pcfg = cfg_from_dict(dict(config.engram_cfg_dict))
+            self.engram = ENGRAMForClassification(pcfg)
 
         def forward(
             self, x: torch.Tensor, modality: str, labels: torch.Tensor | None = None, **_: Any
         ):
-            return self.prism(x, modality=modality, labels=labels)
+            return self.engram(x, modality=modality, labels=labels)
 
-    return PRISMConfigHF, PRISMPreTrainedForClassification
+    return ENGRAMConfigHF, ENGRAMPreTrainedForClassification

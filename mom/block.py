@@ -1,6 +1,6 @@
 """MoM block (spec §3): expert bank + per-token router + gated combination.
 
-Anatomy follows PRISM exactly (§3.5): pre-norm → short causal conv →
+Anatomy follows ENGRAM exactly (§3.5): pre-norm → short causal conv →
 [routed bank of memory-primitive mixers] → residual, then pre-norm →
 SwiGLU FFN → residual.  The router reads the pre-norm hidden state h_t
 (§3.3).  Every routed expert sees the *same* conv output but only its own
@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from prism.modules.conv import ShortCausalConv1d
-from prism.modules.ffn import SwiGLU
-from prism.modules.norm import RMSNorm
+from engram.modules.conv import ShortCausalConv1d
+from engram.modules.ffn import SwiGLU
+from engram.modules.norm import RMSNorm
 
 from .config import MoMConfig
 from .masking import combine_expert_outputs
@@ -78,7 +78,9 @@ class MoMBlock(nn.Module):
             drop_idx = {names.index(n) for n in exclude}
 
         r = x
-        routing = self.router(x, exclude=drop_idx, surprise=surprise)  # h_t = pre-norm stream (§3.3)
+        routing = self.router(
+            x, exclude=drop_idx, surprise=surprise
+        )  # h_t = pre-norm stream (§3.3)
 
         # Post-hoc renormalisation for non-learned modes (router-level
         # exclusion applies to the learned top-k only).

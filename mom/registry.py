@@ -1,6 +1,6 @@
 """Expert registry (spec §3.2, §8).
 
-Maps expert names to the PRISM mixer implementations.  PRISM blocks are
+Maps expert names to the ENGRAM mixer implementations.  ENGRAM blocks are
 consumed, never modified beyond the additive write-mask flags (§12.1).
 "swa" is scaffolded for v2 and raises NotImplementedError when built (§1.4).
 """
@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from prism.modules.attention import SlidingWindowAttention, SWAState
-from prism.modules.delta import GatedDeltaRule
-from prism.modules.ssd import SSDMixer
+from engram.modules.attention import SlidingWindowAttention, SWAState
+from engram.modules.delta import GatedDeltaRule
+from engram.modules.ssd import SSDMixer
 
 EXPERT_NAMES: tuple[str, ...] = ("ssd", "gdr", "swa")
 
 
 def build_expert(name: str, cfg) -> nn.Module:
-    """Instantiate an expert mixer with PRISM-default hyperparameters."""
+    """Instantiate an expert mixer with ENGRAM-default hyperparameters."""
     if name == "ssd":
         return SSDMixer(
             hidden_dim=cfg.hidden_dim,
@@ -37,7 +37,7 @@ def build_expert(name: str, cfg) -> nn.Module:
             backend=cfg.delta_backend,
         )
     if name == "swa":
-        # v2 expert, activated now that PRISM's SWA has a streaming KV-cache
+        # v2 expert, activated now that ENGRAM's SWA has a streaming KV-cache
         # with the MoM masked-execution semantics (spec §3.4 SWA bullet).
         return SlidingWindowAttention(cfg.hidden_dim, cfg.num_heads, window=cfg.swa_window)
     raise ValueError(f"unknown expert {name!r}; registered: {EXPERT_NAMES}")

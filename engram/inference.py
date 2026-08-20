@@ -6,8 +6,8 @@ from typing import Any
 
 import torch
 
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 def load_model(
     checkpoint_path: str | Path,
     device: torch.device,
-) -> tuple[PRISMForClassification, PRISMConfig, dict[str, Any]]:
-    """Load a PRISM checkpoint and return the model, config, and checkpoint metadata.
+) -> tuple[ENGRAMForClassification, ENGRAMConfig, dict[str, Any]]:
+    """Load a ENGRAM checkpoint and return the model, config, and checkpoint metadata.
 
     The checkpoint is expected to contain ``model_state`` and ``cfg`` (as a dict).
     Older checkpoints that store the config object directly are also supported.
@@ -36,13 +36,13 @@ def load_model(
     if isinstance(cfg_data, dict):
         d = dict(cfg_data)
         modalities = [ModalityConfig(**m) for m in d.pop("modalities", [])]
-        cfg = PRISMConfig(**d, modalities=modalities)
-    elif isinstance(cfg_data, PRISMConfig):
+        cfg = ENGRAMConfig(**d, modalities=modalities)
+    elif isinstance(cfg_data, ENGRAMConfig):
         cfg = cfg_data
     else:
         raise TypeError(f"Unexpected checkpoint cfg type: {type(cfg_data)}")
 
-    model = PRISMForClassification(cfg).to(device)
+    model = ENGRAMForClassification(cfg).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
 

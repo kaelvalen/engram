@@ -1,9 +1,9 @@
 import os as _os
 import sys as _sys
 
-# When this script is run directly (python prism/smoke.py), Python inserts the
-# script's own directory (/…/prism/prism/) as sys.path[0], which causes
-# `prism/logging.py` to shadow the stdlib `logging` module and break torch.
+# When this script is run directly (python engram/smoke.py), Python inserts the
+# script's own directory (/…/engram/engram/) as sys.path[0], which causes
+# `engram/logging.py` to shadow the stdlib `logging` module and break torch.
 # Remove the script directory from sys.path before any other import.
 _script_dir = _os.path.dirname(_os.path.abspath(__file__))
 if _sys.path and _sys.path[0] == _script_dir:
@@ -13,14 +13,14 @@ import logging  # noqa: E402
 
 import torch  # noqa: E402
 
-from prism.config import ModalityConfig, PRISMConfig  # noqa: E402
-from prism.logging import setup_logging  # noqa: E402
-from prism.model import PRISMForClassification  # noqa: E402
+from engram.config import ENGRAMConfig, ModalityConfig  # noqa: E402
+from engram.logging import setup_logging  # noqa: E402
+from engram.model import ENGRAMForClassification  # noqa: E402
 
 setup_logging()
-logger = logging.getLogger("prism.smoke")
+logger = logging.getLogger("engram.smoke")
 
-cfg = PRISMConfig(
+cfg = ENGRAMConfig(
     hidden_dim=256,
     num_heads=8,
     num_layers=12,
@@ -31,7 +31,7 @@ cfg = PRISMConfig(
     ],
 )
 
-model = PRISMForClassification(cfg)
+model = ENGRAMForClassification(cfg)
 logger.info("Params: %s", f"{sum(p.numel() for p in model.parameters()):,}")
 
 B, T = 2, 128

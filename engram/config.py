@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from prism.layer_tokens import LAYER_TOKENS
+from engram.layer_tokens import LAYER_TOKENS
 
 
 @dataclass
@@ -19,7 +19,7 @@ class ModalityConfig:
 
 
 @dataclass
-class PRISMConfig:
+class ENGRAMConfig:
     # Model boyutu
     hidden_dim: int = 256
     num_heads: int = 8
@@ -131,7 +131,7 @@ class PRISMConfig:
             raise ValueError(f"dropout must be in [0, 1), got {self.dropout}")
         # Modality sanity checks.
         if not self.modalities:
-            raise ValueError("PRISMConfig.modalities must contain at least one ModalityConfig")
+            raise ValueError("ENGRAMConfig.modalities must contain at least one ModalityConfig")
         modality_names = [m.name for m in self.modalities]
         if len(modality_names) != len(set(modality_names)):
             raise ValueError(f"Modality names must be unique, got {modality_names}")

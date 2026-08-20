@@ -21,7 +21,7 @@ import csv
 import sys
 from pathlib import Path
 
-from prism.data.ptbxl_tasks import TASKS, record_labels, task_vocab
+from engram.data.ptbxl_tasks import TASKS, record_labels, task_vocab
 
 EXPECTED = {
     "superdiag": 5,

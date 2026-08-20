@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from prism.data.audio import get_audio_loaders
+from engram.data.audio import get_audio_loaders
 
 
 def test_synthetic_audio_loader_shapes():

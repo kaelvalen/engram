@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from prism.model import PRISMForClassification
+    from engram.model import ENGRAMForClassification
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
@@ -32,7 +32,7 @@ def _autocast(device: torch.device, amp_dtype: torch.dtype | None):
 
 
 def train_epoch(
-    model: PRISMForClassification,
+    model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -68,7 +68,7 @@ def train_epoch(
 
 @torch.no_grad()
 def evaluate_epoch(
-    model: PRISMForClassification,
+    model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     modality: str,
@@ -95,7 +95,7 @@ def evaluate_epoch(
 
 @torch.no_grad()
 def evaluate_macro_auc(
-    model: PRISMForClassification,
+    model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     modality: str,
@@ -108,7 +108,7 @@ def evaluate_macro_auc(
     Accumulates logits/labels across batches (datasets are small) and computes
     a single macro AUROC, matching the Strodthoff et al. evaluation protocol.
     """
-    from prism.training.metrics import roc_auc_ovr_macro
+    from engram.training.metrics import roc_auc_ovr_macro
 
     model.train(False)
     all_logits, all_labels = [], []
@@ -125,7 +125,7 @@ def evaluate_macro_auc(
 
 @torch.no_grad()
 def evaluate_multilabel_auc(
-    model: PRISMForClassification,
+    model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     modality: str,
@@ -136,7 +136,7 @@ def evaluate_multilabel_auc(
     all/diag/super-diag/form/rhythm metric. Accumulates sigmoid scores + targets
     across the loader and computes one macro AUROC.
     """
-    from prism.training.metrics import multilabel_auroc_macro
+    from engram.training.metrics import multilabel_auroc_macro
 
     model.train(False)
     all_scores, all_targets = [], []

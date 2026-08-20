@@ -1,4 +1,4 @@
-"""PRISM — Image inference and evaluation.
+"""ENGRAM — Image inference and evaluation.
 
 Usage:
     python scripts/infer_image.py --checkpoint output/best_image.pt --image path/to/image.png
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from prism.data.image import patchify
-from prism.inference import load_model
+from engram.data.image import patchify
+from engram.inference import load_model
 
 CIFAR10_CLASSES = [
     "airplane",
@@ -85,7 +85,7 @@ def eval_cifar(
     model, data_root: str, device: torch.device, batch_size: int = 128
 ) -> dict[str, float]:
     """Evaluate the model on the CIFAR-10 test set."""
-    from prism.data.image import PatchCollator
+    from engram.data.image import PatchCollator
     from torch.utils.data import DataLoader
     from torchvision import datasets, transforms
 
@@ -141,7 +141,7 @@ def eval_cifar(
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="PRISM image inference")
+    parser = argparse.ArgumentParser(description="ENGRAM image inference")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--image", type=str, default=None, help="Path to a single image")
     parser.add_argument("--cifar-test", action="store_true", help="Evaluate on CIFAR-10 test set")

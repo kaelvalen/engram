@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PRISM benchmark matrix tuned for NVIDIA RTX 5090 (Blackwell / sm_120).
+# ENGRAM benchmark matrix tuned for NVIDIA RTX 5090 (Blackwell / sm_120).
 #
 # Assumes a single GPU with >=24 GB VRAM. The RTX 5090 runs the full paper
 # config (hidden_dim=256, num_layers=12, num_heads=8, ~9.9M params) at batch
@@ -40,17 +40,17 @@ run () {  # run <name> <seed> <extra-args...>
   local extra=""
   case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
   echo ">>> [$name | seed=$seed] $* $extra"
-  PYTHONHASHSEED="$seed" prism-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
+  PYTHONHASHSEED="$seed" engram-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
 }
 
 for SEED in $SEEDS; do
   # ---------------- Main table: architectures × modalities ----------------
   for MOD in ecg image audio; do
-    run "prism_hybrid_$MOD"    "$SEED" --modality "$MOD" --ssm-kind ssd
+    run "engram_hybrid_$MOD"    "$SEED" --modality "$MOD" --ssm-kind ssd
     run "mamba2_only_$MOD"     "$SEED" --modality "$MOD" --ssm-kind ssd --block-pattern s4
     run "gateddelta_only_$MOD" "$SEED" --modality "$MOD" --block-pattern delta
-    run "prism_legacy_$MOD"    "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin
+    run "engram_legacy_$MOD"    "$SEED" --modality "$MOD" --ssm-kind s4d_legacy --s4d-init lin
   done
 
   # CNN / Transformer baselines (same window + multi-label protocol).

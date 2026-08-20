@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from prism.config import ModalityConfig, PRISMConfig
+from engram.config import ENGRAMConfig, ModalityConfig
 
 
 def test_force_s4_all_layers():
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=6,
@@ -17,7 +17,7 @@ def test_force_s4_all_layers():
 
 
 def test_force_delta_all_layers():
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
@@ -29,7 +29,7 @@ def test_force_delta_all_layers():
 
 
 def test_hybrid_respects_delta_every():
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,

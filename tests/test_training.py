@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
-from prism.training.loops import evaluate_epoch, train_epoch
-from prism.training.trainer import Trainer, TrainerConfig
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
+from engram.training.loops import evaluate_epoch, train_epoch
+from engram.training.trainer import Trainer, TrainerConfig
 from torch.utils.data import DataLoader, TensorDataset
 
 
-def _tiny_cfg() -> PRISMConfig:
-    return PRISMConfig(
+def _tiny_cfg() -> ENGRAMConfig:
+    return ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
@@ -27,7 +27,7 @@ def _tiny_loader(n: int = 16, batch_size: int = 4) -> DataLoader:
 
 
 def test_train_epoch_returns_loss_and_acc():
-    model = PRISMForClassification(_tiny_cfg())
+    model = ENGRAMForClassification(_tiny_cfg())
     loader = _tiny_loader()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
     device = torch.device("cpu")
@@ -39,7 +39,7 @@ def test_train_epoch_returns_loss_and_acc():
 
 
 def test_evaluate_epoch_returns_loss_and_acc():
-    model = PRISMForClassification(_tiny_cfg())
+    model = ENGRAMForClassification(_tiny_cfg())
     loader = _tiny_loader()
     device = torch.device("cpu")
     loss, acc = evaluate_epoch(model, loader, device, modality="ecg")
@@ -49,7 +49,7 @@ def test_evaluate_epoch_returns_loss_and_acc():
 
 def test_trainer_fit_one_epoch(tmp_path: Path):
     cfg = _tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     loader = _tiny_loader(n=8, batch_size=4)
     tcfg = TrainerConfig(epochs=1, log_every_epoch=False)
     trainer = Trainer(model, cfg, device=torch.device("cpu"), tcfg=tcfg)
@@ -61,7 +61,7 @@ def test_trainer_fit_one_epoch(tmp_path: Path):
 
 def test_trainer_checkpoint_saved(tmp_path: Path):
     cfg = _tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     loader = _tiny_loader(n=8, batch_size=4)
     tcfg = TrainerConfig(epochs=1, log_every_epoch=False)
     trainer = Trainer(model, cfg, device=torch.device("cpu"), tcfg=tcfg)
@@ -76,7 +76,7 @@ def test_trainer_checkpoint_saved(tmp_path: Path):
 
 
 def test_train_epoch_updates_parameters():
-    model = PRISMForClassification(_tiny_cfg())
+    model = ENGRAMForClassification(_tiny_cfg())
     before = {n: p.clone() for n, p in model.named_parameters()}
     loader = _tiny_loader()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-2)

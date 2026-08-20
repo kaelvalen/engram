@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.modules.scan import (
+from engram.modules.scan import (
     assoc_recurrence,
     hillis_steele_recurrence,
     linear_recurrence,
     seq_recurrence,
 )
-from prism.modules.scan_reference import blelloch_scan
+from engram.modules.scan_reference import blelloch_scan
 
 
 def _inputs(B=2, H=3, T=15, N=4, dtype=torch.float32, seed=0):

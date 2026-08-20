@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from prism.modules.norm import RMSNorm
+from engram.modules.norm import RMSNorm
 
 from .block import MoMBlock
 from .config import MoMConfig

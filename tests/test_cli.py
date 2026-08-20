@@ -5,12 +5,12 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from prism.logging import setup_logging
-from prism.training.yaml_config import load_yaml_config
+from engram.logging import setup_logging
+from engram.training.yaml_config import load_yaml_config
 
 
 def test_setup_logging_sets_debug_level():
-    root = logging.getLogger("prism")
+    root = logging.getLogger("engram")
     root.handlers.clear()
     root.setLevel(logging.NOTSET)
     setup_logging("DEBUG")
@@ -19,7 +19,7 @@ def test_setup_logging_sets_debug_level():
 
 def test_setup_logging_default_is_info():
     # Reset handlers so setup_logging runs fresh
-    root = logging.getLogger("prism")
+    root = logging.getLogger("engram")
     root.handlers.clear()
     root.setLevel(logging.NOTSET)
     setup_logging()

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
 import torch
 import torch.nn as nn
 
-from prism.layer_tokens import LAYER_TOKENS
+from engram.layer_tokens import LAYER_TOKENS
 
 from .attention import SWABlock, SWAState
 from .delta import DeltaBlock, DeltaState
@@ -14,7 +14,7 @@ from .s4 import S4Block
 from .ssd import SSDBlock
 
 if TYPE_CHECKING:
-    from prism.config import PRISMConfig
+    from engram.config import ENGRAMConfig
 
 __all__ = [
     "LAYER_TOKENS",
@@ -22,7 +22,7 @@ __all__ = [
     "SSDBlockState",
     "DeltaBlockState",
     "SWABlockState",
-    "PRISMBlock",
+    "ENGRAMBlock",
     "BlockBuilder",
     "BLOCK_REGISTRY",
     "register_block",
@@ -32,7 +32,7 @@ __all__ = [
 
 @dataclass
 class BlockState:
-    """Carry state for a single PRISM block.
+    """Carry state for a single ENGRAM block.
 
     Subclasses add typed accessors for the concrete mixer state returned by each
     block family (SSM tensor, Delta matrix state, or attention KV-cache).
@@ -69,8 +69,8 @@ class SWABlockState(BlockState):
 
 
 @runtime_checkable
-class PRISMBlock(Protocol):
-    """Protocol that every PRISM residual block must satisfy.
+class ENGRAMBlock(Protocol):
+    """Protocol that every ENGRAM residual block must satisfy.
 
     Blocks accept the residual input and optional carried states, and return the
     updated residual plus new conv/mixer states.  The exact type of the mixer
@@ -86,10 +86,10 @@ class PRISMBlock(Protocol):
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | DeltaState | None]: ...
 
 
-BlockBuilder = Callable[["PRISMConfig"], nn.Module]
+BlockBuilder = Callable[["ENGRAMConfig"], nn.Module]
 
 # Registry mapping per-layer role tokens to builder callables.  The ``s4`` token
-# resolves to SSD or S4D depending on ``PRISMConfig.ssm_kind``, keeping the
+# resolves to SSD or S4D depending on ``ENGRAMConfig.ssm_kind``, keeping the
 # public ``block_pattern`` API unchanged.
 BLOCK_REGISTRY: dict[str, BlockBuilder] = {}
 
@@ -102,7 +102,7 @@ def register_block(
     May be used as a decorator:
 
         @register_block("my_block")
-        def build_my_block(cfg: PRISMConfig) -> nn.Module:
+        def build_my_block(cfg: ENGRAMConfig) -> nn.Module:
             ...
 
     or as a direct call:
@@ -121,7 +121,7 @@ def register_block(
     return _register
 
 
-def _build_s4_block(cfg: PRISMConfig) -> nn.Module:
+def _build_s4_block(cfg: ENGRAMConfig) -> nn.Module:
     """Resolve the ``s4`` role to SSD or S4D based on ``cfg.ssm_kind``."""
     common = dict(
         hidden_dim=cfg.hidden_dim,
@@ -149,12 +149,12 @@ def _build_s4_block(cfg: PRISMConfig) -> nn.Module:
 
 
 @register_block("s4")
-def _build_s4(cfg: PRISMConfig) -> nn.Module:
+def _build_s4(cfg: ENGRAMConfig) -> nn.Module:
     return _build_s4_block(cfg)
 
 
 @register_block("delta")
-def _build_delta(cfg: PRISMConfig) -> nn.Module:
+def _build_delta(cfg: ENGRAMConfig) -> nn.Module:
     return DeltaBlock(
         hidden_dim=cfg.hidden_dim,
         num_heads=cfg.num_heads,
@@ -169,7 +169,7 @@ def _build_delta(cfg: PRISMConfig) -> nn.Module:
 
 
 @register_block("swa")
-def _build_swa(cfg: PRISMConfig) -> nn.Module:
+def _build_swa(cfg: ENGRAMConfig) -> nn.Module:
     return SWABlock(
         hidden_dim=cfg.hidden_dim,
         num_heads=cfg.num_heads,
@@ -179,7 +179,7 @@ def _build_swa(cfg: PRISMConfig) -> nn.Module:
     )
 
 
-def build_block(layer_type: str, cfg: PRISMConfig) -> nn.Module:
+def build_block(layer_type: str, cfg: ENGRAMConfig) -> nn.Module:
     """Build a block from config using the ``BLOCK_REGISTRY``.
 
     Raises:
@@ -199,7 +199,7 @@ def forward_block(
     x: torch.Tensor,
     state: BlockState | None,
 ) -> tuple[torch.Tensor, BlockState]:
-    """Type-agnostic block forward — ``PRISMBackbone`` calls this.
+    """Type-agnostic block forward — ``ENGRAMBackbone`` calls this.
 
     All blocks (S4/SSD/Delta/SWA) share the same signature:
         (x, conv_state, mixer_state) -> (x, new_conv_state, new_mixer_state)

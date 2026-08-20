@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Laptop-friendly PRISM benchmark smoke (8 GB GPU).
+# Laptop-friendly ENGRAM benchmark smoke (8 GB GPU).
 #
 # This is NOT the paper matrix: it keeps the same protocol (full 10 s ECG,
 # multi-label macro-AUROC, mean±std over seeds) but uses a much smaller model
@@ -31,16 +31,16 @@ run () {  # run <name> <seed> <extra-args...>
   local extra=""
   case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
   echo ">>> [$name | seed=$seed] $* $extra"
-  PYTHONHASHSEED="$seed" prism-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
+  PYTHONHASHSEED="$seed" engram-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
 }
 
 for SEED in $SEEDS; do
   # Main architectures on PTB-XL ECG.
-  run "prism_hybrid_ecg"    "$SEED" --modality ecg --ssm-kind ssd
+  run "engram_hybrid_ecg"    "$SEED" --modality ecg --ssm-kind ssd
   run "mamba2_only_ecg"     "$SEED" --modality ecg --ssm-kind ssd --block-pattern s4
   run "gateddelta_only_ecg" "$SEED" --modality ecg --block-pattern delta
-  run "prism_legacy_ecg"    "$SEED" --modality ecg --ssm-kind s4d_legacy --s4d-init lin
+  run "engram_legacy_ecg"    "$SEED" --modality ecg --ssm-kind s4d_legacy --s4d-init lin
 
   # 1D CNN / Transformer baselines (same window + multi-label protocol).
   python scripts/train_baseline.py --model resnet1d --task ecg --epochs "$EPOCHS" --seed "$SEED" \

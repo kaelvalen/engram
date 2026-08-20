@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from prism.modules.delta import GatedDeltaRule
+from engram.modules.delta import GatedDeltaRule
 
 
 def _make_inputs(B=2, H=3, T=20, Dh=8, seed=0):

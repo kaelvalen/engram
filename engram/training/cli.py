@@ -12,20 +12,20 @@ import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from prism.config import ModalityConfig, PRISMConfig
-from prism.data.paths import resolve_ptbxl_root
-from prism.logging import setup_logging
-from prism.model import PRISMForClassification
-from prism.training.checkpoint import save_checkpoint
-from prism.training.loops import _autocast, cycle_loader, evaluate_epoch
-from prism.training.trainer import Trainer, TrainerConfig, _resolve_amp
-from prism.training.utils import set_seed
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.data.paths import resolve_ptbxl_root
+from engram.logging import setup_logging
+from engram.model import ENGRAMForClassification
+from engram.training.checkpoint import save_checkpoint
+from engram.training.loops import _autocast, cycle_loader, evaluate_epoch
+from engram.training.trainer import Trainer, TrainerConfig, _resolve_amp
+from engram.training.utils import set_seed
 
 logger = logging.getLogger(__name__)
 
 
 def _cfg_kwargs(args: argparse.Namespace) -> dict:
-    """Shared PRISMConfig kwargs derived from CLI args (architecture knobs).
+    """Shared ENGRAMConfig kwargs derived from CLI args (architecture knobs).
 
     `--layer-pattern` (explicit comma/space list) takes precedence over the
     legacy `--block-pattern` force/interleave; when given it also overrides
@@ -57,10 +57,10 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
 
 def _build_loaders_single(
     args: argparse.Namespace,
-) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, str, PRISMConfig]:
+) -> tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, str, ENGRAMConfig]:
     modality = args.modality
     if modality == "image":
-        from prism.data.image import get_cifar_loaders
+        from engram.data.image import get_cifar_loaders
 
         patch_size = args.patch_size
         input_dim = patch_size * patch_size * 3
@@ -79,7 +79,7 @@ def _build_loaders_single(
             )
         ]
     elif modality == "ecg":
-        from prism.data.ecg import get_ecg_loaders
+        from engram.data.ecg import get_ecg_loaders
 
         ecg_root = resolve_ptbxl_root(args.data_root)
         # Any task other than legacy super-diagnostic is inherently multi-label.
@@ -106,7 +106,7 @@ def _build_loaders_single(
             )
         ]
     else:
-        from prism.data.audio import get_audio_loaders
+        from engram.data.audio import get_audio_loaders
 
         train_loader, val_loader = get_audio_loaders(
             root=os.path.join(args.data_root, "audio"),
@@ -124,7 +124,7 @@ def _build_loaders_single(
             )
         ]
 
-    cfg = PRISMConfig(modalities=modalities, **_cfg_kwargs(args))
+    cfg = ENGRAMConfig(modalities=modalities, **_cfg_kwargs(args))
     return train_loader, val_loader, modality, cfg
 
 
@@ -135,10 +135,10 @@ def _build_loaders_joint(
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
     torch.utils.data.DataLoader,
-    PRISMConfig,
+    ENGRAMConfig,
 ]:
-    from prism.data.ecg import get_ecg_loaders
-    from prism.data.image import get_cifar_loaders
+    from engram.data.ecg import get_ecg_loaders
+    from engram.data.image import get_cifar_loaders
 
     patch_size = args.patch_size
     input_dim = patch_size * patch_size * 3
@@ -159,7 +159,7 @@ def _build_loaders_joint(
         ModalityConfig(name="ecg", input_dim=12, num_classes=5, window_size=args.window_size),
         ModalityConfig(name="image", input_dim=input_dim, num_classes=10, patch_size=patch_size),
     ]
-    cfg = PRISMConfig(modalities=modalities, **_cfg_kwargs(args))
+    cfg = ENGRAMConfig(modalities=modalities, **_cfg_kwargs(args))
     return ecg_train, ecg_val, img_train, img_val, cfg
 
 
@@ -173,7 +173,7 @@ def _yaml_defaults(yaml_path: str | None) -> dict[str, object]:
     if not yaml_path:
         return {}
 
-    from prism.training.yaml_config import load_yaml_config
+    from engram.training.yaml_config import load_yaml_config
 
     data = load_yaml_config(yaml_path)
     defaults: dict[str, object] = {}
@@ -203,7 +203,7 @@ def _apply_yaml_defaults(parser: argparse.ArgumentParser, yaml_path: str | None)
 
 def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
     ecg_tr, ecg_va, img_tr, img_va, cfg = _build_loaders_joint(args)
-    model = PRISMForClassification(cfg).to(device)
+    model = ENGRAMForClassification(cfg).to(device)
     opt = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     sched = CosineAnnealingLR(opt, T_max=args.epochs)
     out = Path(args.output_dir)
@@ -214,7 +214,7 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
     tcfg = TrainerConfig(
         tensorboard_dir=os.path.join(args.output_dir, "tb_joint") if args.tensorboard else None,
         wandb_project=args.wandb_project,
-        wandb_run_name=args.wandb_run_name or "prism-joint",
+        wandb_run_name=args.wandb_run_name or "engram-joint",
         amp=args.amp,
     )
     trainer_helper = Trainer(model, cfg, device=device, tcfg=tcfg)
@@ -300,7 +300,7 @@ def run_joint_training(args: argparse.Namespace, device: torch.device) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = argv if argv is not None else sys.argv[1:]
-    parser = argparse.ArgumentParser(description="PRISM training")
+    parser = argparse.ArgumentParser(description="ENGRAM training")
     parser.add_argument(
         "--log-level",
         type=str,
@@ -388,7 +388,7 @@ def main(argv: list[str] | None = None) -> None:
         "--data-root",
         type=str,
         default="./datasets",
-        help="Root for downloaded data: datasets/cifar, datasets/ptbxl, … (not prism/data/)",
+        help="Root for downloaded data: datasets/cifar, datasets/ptbxl, … (not engram/data/)",
     )
     parser.add_argument("--output-dir", type=str, default="./output")
     parser.add_argument(
@@ -472,7 +472,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     train_loader, val_loader, modality, cfg = _build_loaders_single(args)
-    model = PRISMForClassification(cfg).to(device)
+    model = ENGRAMForClassification(cfg).to(device)
 
     # PTB-XL primary metric is macro one-vs-rest AUROC for all tasks (including the
     # legacy single-label super-diagnostic ablation). Non-ECG modalities use accuracy.
@@ -486,7 +486,7 @@ def main(argv: list[str] | None = None) -> None:
         early_stopping_patience=args.early_stopping or None,
         tensorboard_dir=os.path.join(args.output_dir, "tb", modality) if args.tensorboard else None,
         wandb_project=args.wandb_project,
-        wandb_run_name=args.wandb_run_name or f"prism-{modality}",
+        wandb_run_name=args.wandb_run_name or f"engram-{modality}",
         amp=args.amp,
         select_metric="val_macro_auc" if use_auc else "val_acc",
         extra_wandb_config={
@@ -505,7 +505,7 @@ def main(argv: list[str] | None = None) -> None:
             # inherently multi-label; --ecg-multilabel can also force it.
             ml = args.ecg_multilabel or args.ecg_task != "superdiag"
             if ml:
-                from prism.training.loops import evaluate_multilabel_auc
+                from engram.training.loops import evaluate_multilabel_auc
 
                 auc = evaluate_multilabel_auc(
                     model,
@@ -515,7 +515,7 @@ def main(argv: list[str] | None = None) -> None:
                     amp_dtype=_resolve_amp(args.amp),
                 )
             else:
-                from prism.training.loops import evaluate_macro_auc
+                from engram.training.loops import evaluate_macro_auc
 
                 num_classes = train_loader.dataset.num_classes
                 auc = evaluate_macro_auc(
@@ -540,7 +540,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     logger.info(
-        "PRISM — %s | params: %s | device: %s | block_pattern=%s",
+        "ENGRAM — %s | params: %s | device: %s | block_pattern=%s",
         modality.upper(),
         f"{sum(p.numel() for p in model.parameters()):,}",
         device,

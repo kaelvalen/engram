@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from prism.modules.s4 import parallel_scan
+from engram.modules.s4 import parallel_scan
 
 
 def test_parallel_scan_equivalence():

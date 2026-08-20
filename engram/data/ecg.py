@@ -98,7 +98,7 @@ class PTBXLDataset(Dataset):
         except ImportError:
             raise ImportError("pip install wfdb pandas")
 
-        from prism.data.ptbxl_tasks import record_labels, task_vocab
+        from engram.data.ptbxl_tasks import record_labels, task_vocab
 
         db_path = os.path.join(self.root, "ptbxl_database.csv")
         df = pd.read_csv(db_path, index_col="ecg_id")

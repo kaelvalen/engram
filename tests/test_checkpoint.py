@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
-from prism.training.checkpoint import load_checkpoint, save_checkpoint
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
+from engram.training.checkpoint import load_checkpoint, save_checkpoint
 
 
-def _tiny_cfg() -> PRISMConfig:
-    return PRISMConfig(
+def _tiny_cfg() -> ENGRAMConfig:
+    return ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=4,
@@ -35,7 +35,7 @@ def test_load_checkpoint_raises_on_missing_cfg(tmp_path):
 
 def test_load_checkpoint_roundtrip(tmp_path):
     cfg = _tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     path = tmp_path / "ckpt.pt"
     save_checkpoint(path, epoch=1, model_state=model.state_dict(), cfg=cfg)
     ckpt = load_checkpoint(path)

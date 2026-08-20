@@ -5,12 +5,12 @@ import sys
 
 
 def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
-    """Configure the 'prism' logger hierarchy.
+    """Configure the 'engram' logger hierarchy.
 
     The log level is always updated. Handlers are installed only on the first
     call; subsequent calls update the level but ignore log_file.
     """
-    root = logging.getLogger("prism")
+    root = logging.getLogger("engram")
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
 
     if root.handlers:

@@ -2,7 +2,7 @@
 
 This is the original from-scratch up-sweep / down-sweep implementation. It is
 kept as a *teaching and numerical-equivalence reference* only: the production
-path (``prism.modules.scan``) now uses ``torch.associative_scan`` (or a
+path (``engram.modules.scan``) now uses ``torch.associative_scan`` (or a
 vectorized Hillis-Steele fallback), because the strided indexed assignment in
 the sweeps below (``a[:, :, idx_r] = ...``) lowers to non-contiguous scatter
 writes that are markedly slower than reshape-based ops on GPU.

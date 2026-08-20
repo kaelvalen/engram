@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from prism.data.ptbxl_tasks import (
+from engram.data.ptbxl_tasks import (
     TASKS,
     multi_hot,
     record_labels,

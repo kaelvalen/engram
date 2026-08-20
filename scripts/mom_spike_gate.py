@@ -70,7 +70,9 @@ def main() -> int:
         }
 
     ctx_sorted = sorted(contexts)
-    header = "model  " + "  ".join(f"recall@{c}" for c in ctx_sorted) + "  final@train  min_util  params"
+    header = (
+        "model  " + "  ".join(f"recall@{c}" for c in ctx_sorted) + "  final@train  min_util  params"
+    )
     print(header)
     print("-" * len(header))
     for kind in KINDS:
@@ -80,11 +82,17 @@ def main() -> int:
         cells = []
         for c in ctx_sorted:
             accs = s["by_ctx"].get(c)
-            cells.append(f"{torch.tensor(accs).mean():.3f}±{torch.tensor(accs).std():.3f}" if accs else "  —  ")
+            cells.append(
+                f"{torch.tensor(accs).mean():.3f}±{torch.tensor(accs).std():.3f}"
+                if accs
+                else "  —  "
+            )
         fa = torch.tensor(s["final_acc"])
         mu = f"{min(s['min_util']):.3f}" if s["min_util"] else " — "
         print(
-            f"{kind:<5}  " + "  ".join(cells) + f"  {fa.mean():.3f}±{fa.std():.3f}  {mu:>7}  {s['params']}"
+            f"{kind:<5}  "
+            + "  ".join(cells)
+            + f"  {fa.mean():.3f}±{fa.std():.3f}  {mu:>7}  {s['params']}"
         )
 
     # ---- gate verdict ----
@@ -101,9 +109,16 @@ def main() -> int:
 
     ok_quality = all(mom_acc >= v for v in rivals.values()) and rivals
     ok_collapse = min_util >= 0.10
-    print(f"\nrecall@{gate_ctx}: mom={mom_acc:.3f} | " + "  ".join(f"{k}={v:.3f}" for k, v in rivals.items()))
+    print(
+        f"\nrecall@{gate_ctx}: mom={mom_acc:.3f} | "
+        + "  ".join(f"{k}={v:.3f}" for k, v in rivals.items())
+    )
     print(f"min expert utilization: {min_util:.3f} (need ≥ 0.10)")
-    verdict = "PASS" if (ok_quality and ok_collapse) else ("FAIL (collapse)" if not ok_collapse else "FAIL (quality)")
+    verdict = (
+        "PASS"
+        if (ok_quality and ok_collapse)
+        else ("FAIL (collapse)" if not ok_collapse else "FAIL (quality)")
+    )
     print(f"SPIKE GATE: {verdict}")
     return 0 if (ok_quality and ok_collapse) else 1
 

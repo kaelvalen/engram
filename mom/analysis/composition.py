@@ -13,7 +13,7 @@ def time_averaged_utilization(routings) -> np.ndarray:
 
 
 def reference_composition(ratio: tuple[float, ...] = (3, 1)) -> np.ndarray:
-    """Normalised fixed-ratio reference line (default PRISM 3:1)."""
+    """Normalised fixed-ratio reference line (default ENGRAM 3:1)."""
     r = np.asarray(ratio, dtype=np.float64)
     return r / r.sum()
 

@@ -60,7 +60,7 @@ htmlcov/
 /tensorboard/
 
 # Downloaded datasets (repo root ONLY). Never use bare `data/` here: it would
-# ignore every folder named `data`, including `prism/data/` (Python package).
+# ignore every folder named `data`, including `engram/data/` (Python package).
 /datasets/
 /data/
 *.pt

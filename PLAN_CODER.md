@@ -17,7 +17,7 @@ experiment that *depends on* Step 2 existing — not on it being trained yet.
 
 Two decisions block Steps 3/4. Resolve both at the top of this file, then proceed.
 
-### 0a. Final project name (replaces `PRISM`)
+### 0a. Final project name (replaces `ENGRAM`)
 Chosen name: **ENGRAM** (DECIDED). Banner tagline: *ENGRAM — modality-portable
 hybrid linear-recurrent backbone with surprise-gated explicit memory.*
 (Full naming rationale at the bottom of this file.)
@@ -26,15 +26,15 @@ Rename scope: **doc-level (cheap)** — DECIDED. Change only prose/titles:
 - `README.md` title
 - `paper/PAPER_DRAFT.md` title and the paper's subtitle already carrying the
   scientific claim ("modality-portable hybrid linear-recurrent backbone")
-- Citation bibtex `title=` (keep the `github.com/kaelvalen/prism` URL as-is
+- Citation bibtex `title=` (keep the `github.com/kaelvalen/engram` URL as-is
   until the repo itself is renamed on GitHub — a separate decision)
 
-Python package **stays `prism` internally** for now. Defer the full package
+Python package **stays `engram` internally** for now. Defer the full package
 rename until ENGRAM is proven (a paper / after the surprise experiment). This
 keeps risk near zero.
 
 ### 0b. SABER's role
-DECIDED: `prism.saber.saber.SurpriseEstimator` becomes an *input* to MoM's
+DECIDED: `engram.saber.saber.SurpriseEstimator` becomes an *input* to MoM's
 router (Step 2). SABER is no longer a standalone "experimental" effort — it is
 the surprise-signal supplier inside MoM.
 
@@ -91,7 +91,7 @@ without wiring the full SABER encoder/predictor pipeline yet. Default must be
   and after the `exclude` mask, add:
   ```python
   if surprise is not None and self.surprise_scale != 0.0:
-      # surprise: [B, T] normalized scalar per token (prism.saber SurpriseEstimator).
+      # surprise: [B, T] normalized scalar per token (engram.saber SurpriseEstimator).
       z = z + self.surprise_scale * surprise.unsqueeze(-1)  # [B, T] -> [B, T, 1]
   ```
   Put the comment in; don't leave the choice of learnable-vs-fixed unexplained.
@@ -155,7 +155,7 @@ three-way split (core / MoM / SABER as separate top-level sections):
 ```
 
 Delete the standalone `## SABER (experimental)` section entirely — its content
-moves into the MoM subsection above. The `prism/saber/` *directory* does not
+moves into the MoM subsection above. The `engram/saber/` *directory* does not
 move; only its framing changes. Replace the "SABER is experimental / not wired
 into the benchmark matrix" label with the concrete roadmap line
 ("surprise-gated routing — interface in Step 2, experiment pending").
@@ -172,14 +172,14 @@ standalone infrastructure (FLA-style)`. No orphaned SABER header remains.
 **Cheap option checklist:**
 - `README.md` title line
 - `paper/PAPER_DRAFT.md` title
-- Citation bibtex `title=` (keep the `github.com/kaelvalen/prism` URL as-is
+- Citation bibtex `title=` (keep the `github.com/kaelvalen/engram` URL as-is
   unless the repo itself is renamed on GitHub — a separate decision)
 
 **Full option checklist (only if chosen in 0a):**
 - `pyproject.toml`: `name`, `description`, `[project.scripts]`, and
   `[tool.setuptools.packages.find].include`
-- Rename `prism/` → `<new_name>/`
-- Global replace: `from prism.` → `from <new_name>.`, `import prism` →
+- Rename `engram/` → `<new_name>/`
+- Global replace: `from engram.` → `from <new_name>.`, `import engram` →
   `import <new_name>` across `mom/`, `tests/`, `scripts/`, `train.py`
 - `flake.nix` / `.envrc` if they reference the package name
 - Re-run Step 5 after this (this is the step most likely to break silently)
@@ -198,8 +198,8 @@ python scripts/validate_ptbxl_tasks.py  # unaffected, sanity check anyway
 If Step 4 used the full rename, also grep for stragglers:
 
 ```bash
-grep -rn "\bprism\." --include="*.py" .        # nothing outside intentional refs
-grep -rn "PRISM" README.md paper/              # no orphaned old name in prose
+grep -rn "\bengram\." --include="*.py" .        # nothing outside intentional refs
+grep -rn "ENGRAM" README.md paper/              # no orphaned old name in prose
 ```
 
 ---

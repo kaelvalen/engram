@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMForClassification
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMForClassification
 
 
-def tiny_cfg(**kwargs) -> PRISMConfig:
+def tiny_cfg(**kwargs) -> ENGRAMConfig:
     base = dict(
         hidden_dim=32,
         num_heads=4,
@@ -18,12 +18,12 @@ def tiny_cfg(**kwargs) -> PRISMConfig:
         ],
     )
     base.update(kwargs)
-    return PRISMConfig(**base)
+    return ENGRAMConfig(**base)
 
 
 def test_forward_ecg_and_image():
     cfg = tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     b = 2
     ecg = torch.randn(b, 32, 12)
     y = torch.randint(0, 5, (b,))
@@ -39,14 +39,14 @@ def test_forward_ecg_and_image():
 
 def test_unknown_modality_raises():
     cfg = tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     with pytest.raises(KeyError):
         model(torch.randn(1, 8, 12), modality="unknown", labels=torch.zeros(1, dtype=torch.long))
 
 
 def test_backward_step():
     cfg = tiny_cfg()
-    model = PRISMForClassification(cfg)
+    model = ENGRAMForClassification(cfg)
     x = torch.randn(2, 16, 12, requires_grad=False)
     y = torch.randint(0, 5, (2,))
     out = model(x, modality="ecg", labels=y)

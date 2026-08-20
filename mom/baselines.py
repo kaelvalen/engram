@@ -1,12 +1,12 @@
 """Parameter-matched baselines (spec §6.2).
 
-    B1  PRISM fixed 3:1 SSD:GDR hybrid (the incumbent)
+    B1  ENGRAM fixed 3:1 SSD:GDR hybrid (the incumbent)
     B2  SSD-only        B3  GDR-only
     B4  MoM with frozen uniform routing (g = 1/K) — value of *learned* routing
     B5  MoM with seeded random per-token routing — value vs. arbitrary routing
 
 B4/B5 are MoMLM instances with the router mode overridden; B1–B3 are stacks
-of the corresponding PRISM residual blocks (mixer + conv + FFN), i.e. the
+of the corresponding ENGRAM residual blocks (mixer + conv + FFN), i.e. the
 fixed-composition incumbent family.
 """
 
@@ -16,9 +16,9 @@ from dataclasses import replace
 
 import torch
 import torch.nn as nn
-from prism.modules.delta import DeltaBlock
-from prism.modules.norm import RMSNorm
-from prism.modules.ssd import SSDBlock
+from engram.modules.delta import DeltaBlock
+from engram.modules.norm import RMSNorm
+from engram.modules.ssd import SSDBlock
 
 from .config import MoMConfig
 from .model import MoMLM
@@ -28,7 +28,7 @@ BASELINE_KINDS = ("B1", "B2", "B3", "B4", "B5")
 
 def layer_pattern(kind: str, num_layers: int) -> list[str]:
     """Fixed per-layer composition for the incumbent baselines."""
-    if kind == "B1":  # PRISM 3:1 SSD:GDR — the special case MoM recovers (§1.2)
+    if kind == "B1":  # ENGRAM 3:1 SSD:GDR — the special case MoM recovers (§1.2)
         return [("gdr" if (i + 1) % 4 == 0 else "ssd") for i in range(num_layers)]
     if kind == "B2":
         return ["ssd"] * num_layers
@@ -37,7 +37,7 @@ def layer_pattern(kind: str, num_layers: int) -> list[str]:
     raise ValueError(f"no fixed pattern for baseline kind {kind!r}")
 
 
-def _build_prism_block(name: str, cfg: MoMConfig) -> nn.Module:
+def _build_engram_block(name: str, cfg: MoMConfig) -> nn.Module:
     if name == "ssd":
         return SSDBlock(
             hidden_dim=cfg.hidden_dim,
@@ -66,7 +66,7 @@ def _build_prism_block(name: str, cfg: MoMConfig) -> nn.Module:
 
 
 class HybridLM(nn.Module):
-    """Fixed-composition PRISM backbone + LM head (B1–B3)."""
+    """Fixed-composition ENGRAM backbone + LM head (B1–B3)."""
 
     def __init__(self, kind: str, cfg: MoMConfig, vocab_size: int):
         super().__init__()
@@ -75,7 +75,7 @@ class HybridLM(nn.Module):
         self.pattern = layer_pattern(kind, cfg.num_layers)
         self.vocab_size = vocab_size
         self.embed = nn.Embedding(vocab_size, cfg.hidden_dim)
-        self.blocks = nn.ModuleList([_build_prism_block(t, cfg) for t in self.pattern])
+        self.blocks = nn.ModuleList([_build_engram_block(t, cfg) for t in self.pattern])
         self.norm_f = RMSNorm(cfg.hidden_dim)
         self.lm_head = nn.Linear(cfg.hidden_dim, vocab_size, bias=False)
 

@@ -27,10 +27,10 @@ jobs:
           pip install -e ".[dev,test]"
 
       - name: Ruff check
-        run: ruff check prism tests scripts train.py
+        run: ruff check engram tests scripts train.py
 
       - name: Ruff format check
-        run: ruff format --check prism tests scripts train.py
+        run: ruff format --check engram tests scripts train.py
 
       - name: Pytest
         run: pytest

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.modules.attention import SlidingWindowAttention, SWABlock
+from engram.modules.attention import SlidingWindowAttention, SWABlock
 from torch.autograd import gradcheck
 
 RTOL = 1e-10

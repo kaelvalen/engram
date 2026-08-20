@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import pytest
 import torch
-from prism.config import ModalityConfig, PRISMConfig
-from prism.model import PRISMBackbone
+from engram.config import ENGRAMConfig, ModalityConfig
+from engram.model import ENGRAMBackbone
 
 
 def _backbone(pattern, **kw):
     torch.manual_seed(0)
-    cfg = PRISMConfig(
+    cfg = ENGRAMConfig(
         hidden_dim=32,
         num_heads=4,
         num_layers=len(pattern),
@@ -26,7 +26,7 @@ def _backbone(pattern, **kw):
         modalities=[ModalityConfig("x", 32, 2)],
         **kw,
     )
-    return PRISMBackbone(cfg).eval()
+    return ENGRAMBackbone(cfg).eval()
 
 
 @pytest.mark.parametrize(
