@@ -340,7 +340,8 @@ fixed 2026-07); it is skipped when the Triton kernel cannot execute.
 
 ```bash
 # inside nix develop, or with the pip venv activated
-pytest                       # 270+ passed, 1 skipped (FLA probe skips when Triton unavailable)
+pytest -m "not slow and not gpu"   # fast suite (gradcheck/FLA excluded by default)
+pytest -m "slow"                   # fp64 gradcheck suite
 ruff check engram mom tests scripts train.py
 ruff format --check engram mom tests scripts train.py
 ```

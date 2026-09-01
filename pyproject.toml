@@ -65,11 +65,15 @@ include = ["engram*", "mom*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "slow: long-running tests excluded from the default CI run",
+    "gpu: tests that require a CUDA-capable device",
+]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["engram", "tests", "scripts", "train.py"]
+src = ["engram", "mom", "tests", "scripts", "train.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

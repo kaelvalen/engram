@@ -48,6 +48,7 @@ skip_no_fla = pytest.mark.skipif(
 
 
 @skip_no_fla
+@pytest.mark.gpu
 @pytest.mark.parametrize("dtype,atol", [(torch.bfloat16, 1e-2)])
 def test_fla_matches_reference(dtype, atol):
     torch.manual_seed(0)

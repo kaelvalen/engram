@@ -27,13 +27,14 @@ jobs:
           pip install -e ".[dev,test]"
 
       - name: Ruff check
-        run: ruff check engram tests scripts train.py
+        run: ruff check engram mom tests scripts train.py
 
       - name: Ruff format check
-        run: ruff format --check engram tests scripts train.py
+        run: ruff format --check engram mom tests scripts train.py
 
-      - name: Pytest
-        run: pytest
+      - name: Pytest (fast)
+        run: pytest -m "not slow and not gpu"
+        timeout-minutes: 20
 
       - name: Upload test results
         if: always()
