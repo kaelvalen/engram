@@ -106,7 +106,7 @@ class SSDMixer(nn.Module):
         a = torch.exp(dt * self._A())  # [B, T, H] decay in (0, 1)
         dBx = (dt.unsqueeze(-1) * xv).unsqueeze(-1) * Bc.unsqueeze(-2)  # [B,T,H,P,N]
         if write_mask is not None:
-            # MoM (§3.4): zero the write on non-routed steps so the update is
+            # SGMS (§3.4): zero the write on non-routed steps so the update is
             # s_t = a_t ⊙ s_{t-1} + 0.  With freeze_on_mask the decay itself is
             # neutralised on a miss (a_t → 1), freezing the state (D1 ablation
             # ``decay_on_skip: false``); otherwise decay applies on every step.
@@ -152,7 +152,7 @@ class SSDMixer(nn.Module):
     ):
         """SSD prefill/decode.
 
-        Additive MoM flags (§3.4): ``write_mask`` [B, T] (or [B, 1] at T==1)
+        Additive SGMS flags (§3.4): ``write_mask`` [B, T] (or [B, 1] at T==1)
         zeroes the write term on non-routed steps; ``freeze_on_mask`` also
         neutralises the decay there (state frozen) instead of applying it
         (spec D1 ``decay_on_skip`` ablation).  Both default off, preserving

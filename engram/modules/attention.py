@@ -61,7 +61,7 @@ class SWAState:
     token-by-token) decoding exactly equal a single full-sequence forward.
     Call `detach()` between chunks to cut the autograd graph.
 
-    In the MoM masked execution path (§3.4) the cache instead holds the last
+    In the SGMS masked execution path (§3.4) the cache instead holds the last
     `window` *routed* keys/values and `pos` is a per-batch tensor counting
     routed tokens — the expert's own subsequence time axis.
     """
@@ -112,7 +112,7 @@ class SlidingWindowAttention(nn.Module):
         RoPE-applied keys/values plus their own causal window — exactly equal
         to a single full-sequence forward (fp64-tested).
 
-        ``write_mask`` (MoM §3.4) switches to the masked execution path:
+        ``write_mask`` (SGMS §3.4) switches to the masked execution path:
         the window slides over the routed subsequence only.
         """
         if write_mask is not None:
@@ -152,7 +152,7 @@ class SlidingWindowAttention(nn.Module):
         return self.out_proj(o), new_state
 
     def _forward_masked(self, x: torch.Tensor, state: SWAState | None, write_mask: torch.Tensor):
-        """MoM §3.4 masked execution: the window slides over the ROUTED
+        """SGMS §3.4 masked execution: the window slides over the ROUTED
         subsequence only. Non-routed tokens are never written to the KV cache
         and are masked out as keys; their query outputs are computed but
         meaningless (the caller gathers outputs at routed positions only).

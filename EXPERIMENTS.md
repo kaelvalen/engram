@@ -155,18 +155,18 @@ with `RUN_ABLATIONS=1` (adds ~2× runtime).
   follow-up; the current matrix is "modality-portable" (same arch, separate
   runs). Be explicit about this in the paper.
 
-## MoM spike status (2026-07-18, RTX 5060)
+## SGMS spike status (2026-07-18, RTX 5060)
 
 ### Surprise-gated routing — hypothesis & planned experiment (NOT yet run)
 
-The MoM router (`mom/router.py`) currently routes on `z_t = W_r h_t` alone — a
+The SGMS router (`sgms/router.py`) currently routes on `z_t = W_r h_t` alone — a
 plain learned linear projection (Switch-Transformer style) with **no signal for
 "how well is the recurrent state predicting this token."** The `SurpriseEstimator`
 in `engram/saber/saber.py` is exactly the missing quantity: it returns a clamped,
 normalized per-token scalar measuring how far each token deviates from the
 recurrent state's prediction.
 
-**Hypothesis.** The first spike-gate failure (MoM recall 0.023 vs GDR-only 0.096
+**Hypothesis.** The first spike-gate failure (SGMS recall 0.023 vs GDR-only 0.096
 @64, see table below) is partly a *weak-routing-signal* problem, not purely a
 capacity problem. The literature's proposal — the recurrent state summarizes the
 easy/compressible part, and the explicit memory retains only surprising tokens —
@@ -199,7 +199,7 @@ sequenced to avoid confounding quantity with learnability.**
    reference`, so it runs without any CUDA-kernel/Triton dependency, e.g. the
    NixOS `/sbin/ldconfig` issue):
    ```
-   python scripts/mom_surprise_probe.py --config configs/mom/surprise_probe.yaml \
+   python scripts/sgms_surprise_probe.py --config configs/sgms/surprise_probe.yaml \
        --seeds 0,1,2 --device cuda
    ```
    (If you instead want the production `associative_scan`/FLA kernels on NixOS,
@@ -242,27 +242,27 @@ sees only `h_{<t}` by construction; a **causality/leakage test** is required
 (changing `h_{>t}` must not change `surprise_t`).
 
 **Status:** router per-expert interface landed + regression tests pass (see
-`tests/mom/test_router_surprise.py`). The standalone predictor implementation
+`tests/sgms/test_router_surprise.py`). The standalone predictor implementation
 and the three stage runs are the next, separate tasks. As before: **a
 hypothesis and a planned experiment, not a result** — no improvement is claimed
 before a run exists.
 
 Gate protocol: 3 seeds × 8000 steps, MQAR 8-pairs @ T=64, vocab 512, bf16,
-lr 1e-3 (see `configs/mom/spike.yaml` for the recipe note — the harder sweep
+lr 1e-3 (see `configs/sgms/spike.yaml` for the recipe note — the harder sweep
 cells do not reach the MQAR "click" inside this budget on an 8 GB GPU).
 
 | model | recall@64 | recall@4096 | min utilization | params |
 |---|---|---|---|---|
-| **mom** | 0.023 ± 0.014 | 0.013 ± 0.023 | **0.184** | 4.48 M |
+| **sgms** | 0.023 ± 0.014 | 0.013 ± 0.023 | **0.184** | 4.48 M |
 | B1 (fixed 3:1) | 0.039 ± 0.034 | 0.008 ± 0.000 | — | 3.16 M |
 | B2 (SSD-only) | 0.000 | 0.000 | — | 3.16 M |
 | B3 (GDR-only) | 0.096 ± 0.018 | 0.104 ± 0.048 | — | 3.16 M |
 
 **Spike gate (§6.4): FAIL on quality / PASS on no-collapse.** The router does
-not collapse (min utilization 0.184 ≥ 0.10), but MoM trails GDR-only on this
+not collapse (min utilization 0.184 ≥ 0.10), but SGMS trails GDR-only on this
 pure-recall task at this optimization budget. Baseline parameter matching
-(§6.2) is NOT yet honored (mom 4.48 M vs baselines 3.16 M) — the next run
-must equalize it (fewer MoM layers or a smaller `hidden_dim` for baselines).
+(§6.2) is NOT yet honored (sgms 4.48 M vs baselines 3.16 M) — the next run
+must equalize it (fewer SGMS layers or a smaller `hidden_dim` for baselines).
 
 **Ablations run:**
 - `lambda_bal = 0` (3 seeds): **R1 routing collapse confirmed empirically** —
@@ -270,7 +270,7 @@ must equalize it (fewer MoM layers or a smaller `hidden_dim` for baselines).
   goes all-SSD or all-GDR depending on the seed), and 2/3 seeds fail to learn
   at all (acc 0.029 ± 0.050). Load balancing is load-bearing in v1.
 - `shared_expert: ssd` (3 seeds): no collapse (min utilization 0.184–0.202)
-  and the best MoM result so far — one seed reaches 0.109 @64 (on par with
+  and the best SGMS result so far — one seed reaches 0.109 @64 (on par with
   B3's 0.096–0.117), though 2/3 seeds still fail to learn (acc 0.037 ± 0.063,
   params 5.79 M). The always-on SSD stabilizes utilization but does not yet
   close the reliability gap.
@@ -278,11 +278,11 @@ must equalize it (fewer MoM layers or a smaller `hidden_dim` for baselines).
 **C2 (specialization) first signal is positive:** on the trained spike model,
 every layer shows statistically significant mutual information between expert
 choice and MQAR token class (key/value/query/filler) at p = 0.002 (500
-permutations; layer 1: 0.52 nats) — see `output/mom/analysis/seed0/report.json`
-(`scripts/mom_analysis.py`).
+permutations; layer 1: 0.52 nats) — see `output/sgms/analysis/seed0/report.json`
+(`scripts/sgms_analysis.py`).
 
 **Next experiments:** `lambda_bal ∈ {1e-3, 1e-1}` sweep; longer runs at the
-same recipe (the click was still in progress at 8k steps for MoM); parameter
+same recipe (the click was still in progress at 8k steps for SGMS); parameter
 matching; passkey + state-tracking suites (tasks implemented, untrained);
 **surprise-gated routing** (feed `SurpriseEstimator` → router, re-run the
 spike-gate protocol in the same section).

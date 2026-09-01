@@ -6,11 +6,12 @@
 > implementation with full **numerical-equivalence tests** against the
 > `torch.associative_scan` and FLA Triton kernels.
 >
-> Built on top of that verifiable core, **MoM** (Mixture of Memory Primitives)
-> under `mom/` is the architecture contribution: a **surprise-gated router**
-> decides, per token, which memory primitive updates its state — a learned
-> answer to *when a compressed recurrent state suffices vs. when a surprising
-> token must be written explicitly* (see [MoM](#mom--mixture-of-memory-primitives-mom)).
+> Built on top of that verifiable core, **SGMS** (Surprise-Gated Mixer
+> Selection) under `sgms/` is the architecture contribution: a **surprise-gated
+> router** decides, per token, which memory primitive updates its state — a
+> learned answer to *when a compressed recurrent state suffices vs. when a
+> surprising token must be written explicitly* (see
+> [SGMS](#sgms--surprise-gated-mixer-selection-sgms)).
 >
 > *The Python package is still `engram` internally; "ENGRAM" is the project and
 > paper name.*
@@ -39,7 +40,7 @@ The backbone interleaves two complementary mixers (plus optional attention):
 - **Sliding-window attention** (optional, `swa`) — RoPE attention with a real
   **streaming KV-cache** (`SWAState`), so chunked/token-by-token decode is
   bit-exact with the full-sequence forward (fp64-tested). Used for H1-style
-  hybrid ablations and as MoM's third expert.
+  hybrid ablations and as SGMS's third expert.
 
 The per-layer role tokens are defined in `engram.layer_tokens` as `("s4", "delta",
 "swa")`. `engram.modules.block.BLOCK_REGISTRY` maps each token to a builder
@@ -166,9 +167,9 @@ works behind TLS-intercepting proxies); output goes to `datasets/audio/{train,va
 (30,769 train + 7,777 val samples over the 10 core commands) and is consumed by
 `engram/data/audio.get_audio_loaders(synthetic=False)`.
 
-## MoM — Mixture of Memory Primitives (`mom/`)
+## SGMS — Surprise-Gated Mixer Selection (`sgms/`)
 
-MoM replaces ENGRAM's fixed block ratio with a **bank of heterogeneous memory
+SGMS replaces ENGRAM's fixed block ratio with a **bank of heterogeneous memory
 experts** (SSD, GDR; SWA scaffolded for v2) and a lightweight **per-token
 router**: for every token, the router selects which memory primitive updates
 its state and produces that token's output. The composition of the backbone
@@ -180,14 +181,14 @@ optionally augmented by an explicit **surprise signal** — how far each token
 deviates from the recurrent state's prediction — so routing can ask *"is this
 token surprising enough to write explicitly?"* before choosing a primitive.
 
-- `mom/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes; optional surprise feature via `surprise_scale`)
-- `mom/block.py` — MoMBlock: ENGRAM-exact residual/pre-norm anatomy + expert bank + router
-- `mom/registry.py` — expert registry (`ssd`, `gdr`, `swa`), masked-execution contract
-- `mom/losses.py` — Switch load-balancing + router z-loss (§3.7 stability objectives)
-- `mom/baselines.py` — B1 fixed-3:1 hybrid, B2 SSD-only, B3 GDR-only, B4/B5 frozen routers
-- `mom/tasks/` — MQAR (spike task), passkey, state-tracking probes
-- `mom/analysis/` — §7 suite: routing heatmaps, specialization MI, knockout, composition, dynamics
-- `configs/mom/` — spike / v1 / v1_k2 / v1_swa configs; `scripts/mom_spike_gate.py`, `scripts/mom_analysis.py`
+- `sgms/router.py` — TokenRouter (top-k, Switch-style; `learned` / `uniform` (B4) / `random` (B5) modes; optional surprise feature via `surprise_scale`)
+- `sgms/block.py` — SGMSBlock: ENGRAM-exact residual/pre-norm anatomy + expert bank + router
+- `sgms/registry.py` — expert registry (`ssd`, `gdr`, `swa`), masked-execution contract
+- `sgms/losses.py` — Switch load-balancing + router z-loss (§3.7 stability objectives)
+- `sgms/baselines.py` — B1 fixed-3:1 hybrid, B2 SSD-only, B3 GDR-only, B4/B5 frozen routers
+- `sgms/tasks/` — MQAR (spike task), passkey, state-tracking probes
+- `sgms/analysis/` — §7 suite: routing heatmaps, specialization MI, knockout, composition, dynamics
+- `configs/sgms/` — spike / v1 / v1_k2 / v1_swa configs; `scripts/sgms_spike_gate.py`, `scripts/sgms_analysis.py`
 
 Masked-dense execution (spec §3.4) is exact and fp64-tested: SSD decays on
 every step (D1, `decay_on_skip`), GDR passes its state through exactly on a
@@ -196,14 +197,14 @@ reference ≡ dense-masked forward at `rtol=1e-10`.
 
 **Spike gate (§6.4), RTX 5060, 3 seeds × 8000 steps, MQAR 8-pairs @ T=64:**
 routing does **not** collapse (min utilization 0.184 ≥ 0.10), but the quality
-gate **fails** — MoM recall@4096 = 0.013 vs GDR-only 0.104 (SSD-only 0.000,
+gate **fails** — SGMS recall@4096 = 0.013 vs GDR-only 0.104 (SSD-only 0.000,
 fixed-3:1 0.008). Read: uniform-ish early routing dilutes GDR on pure-recall
 tasks. Ablations: `lambda_bal = 0` collapses hard (min util 0.0, R1 confirmed);
 `shared_expert: ssd` keeps utilization healthy and one seed reaches 0.109
 (B3-level) but not yet reliably. First C2 (specialization) signal is already
 positive: all four layers show significant mutual information between expert
 choice and token class (p = 0.002; layer 1: 0.52 nats). Run logs and
-checkpoints under `output/mom/`.
+checkpoints under `output/sgms/`.
 
 ### Surprise-gated routing (in progress)
 
@@ -218,7 +219,7 @@ explicit write?"
 - **Status — per-expert interface landed, experiment NOT run.** `TokenRouter`
   folds an optional `[B, T]` `surprise` tensor through a **per-expert
   `surprise_weight`** (shape `[K]`, default zeros ⇒ doubly inert,
-  backward-compatible), gated by `surprise_scale` / `MoMConfig.router_surprise_scale`.
+  backward-compatible), gated by `surprise_scale` / `SGMSConfig.router_surprise_scale`.
   A plain scalar-broadcast surprise was rejected: it is softmax/argmax
   shift-invariant and hence a no-op at `top_k=1` (see EXPERIMENTS.md).
 - **Planned, staged, sequential (see EXPERIMENTS.md):** ① fixed-scale probe →
@@ -258,7 +259,7 @@ python scripts/infer_image.py \
   with `--resume path/to/last.pt`.
 - `last.pt` is written every epoch; `best.pt` is selected by the validation
   metric (macro-AUROC for ECG tasks, accuracy for image/audio).
-- MoM runs are fully seeded (model init, router, data); identical reruns on the
+- SGMS runs are fully seeded (model init, router, data); identical reruns on the
   same hardware produce identical routing decisions and metrics.
 
 ## Benchmark numbers
@@ -321,7 +322,7 @@ if FLA/CUDA are unavailable.
 **Sliding-window attention** (`engram/modules/attention.py`) — RoPE, causal
 window, and a streaming KV-cache (`SWAState`: last `window` RoPE-applied
 keys/values + absolute position). Chunked and token-by-token decode are
-fp64-exact with full-sequence forward; the MoM masked path slides the window
+fp64-exact with full-sequence forward; the SGMS masked path slides the window
 over the routed subsequence only.
 
 ## Backends
@@ -342,17 +343,17 @@ fixed 2026-07); it is skipped when the Triton kernel cannot execute.
 # inside nix develop, or with the pip venv activated
 pytest -m "not slow and not gpu"   # fast suite (gradcheck/FLA excluded by default)
 pytest -m "slow"                   # fp64 gradcheck suite
-ruff check engram mom tests scripts train.py
-ruff format --check engram mom tests scripts train.py
+ruff check engram sgms tests scripts train.py
+ruff format --check engram sgms tests scripts train.py
 ```
 
-- **Numerical equivalence** — scan/delta backends vs sequential reference; MoM dense-masked ≡ token-by-token reference at fp64 `rtol=1e-10`.
-- **Gradcheck** (float64) — scan, SSD mixer, delta rule, full MoM block, masked SWA.
+- **Numerical equivalence** — scan/delta backends vs sequential reference; SGMS dense-masked ≡ token-by-token reference at fp64 `rtol=1e-10`.
+- **Gradcheck** (float64) — scan, SSD mixer, delta rule, full SGMS block, masked SWA.
 - **State-passing** — one-shot == chunked-with-carried-state for every mixer incl. SWA KV-cache (streaming correctness).
 - **Regression** — seed-locked golden losses.
 - **Property-based** (hypothesis) — finite outputs/loss/grads; gate simplex, mask idempotence, expert-order permutation invariance; CPU determinism.
 - **FLA probe** — `tests/test_delta_equivalence.py` runs the FLA Triton kernel on a tiny tensor before declaring the backend available.
-- **MoM suite** (`tests/mom/`) — routing, losses, masked equivalence, state passing, gradcheck, properties, tasks, training, analysis.
+- **SGMS suite** (`tests/sgms/`) — routing, losses, masked equivalence, state passing, gradcheck, properties, tasks, training, analysis.
 
 ## Key config flags
 
@@ -369,7 +370,7 @@ ruff format --check engram mom tests scripts train.py
 | `multilabel` / `--ecg-multilabel` | off | PTB-XL multi-label targets + BCE + macro-AUROC selection |
 | `audio_synthetic` / `--audio-synthetic` | on | in-memory audio data; off = real Speech Commands dumps |
 
-MoM flags live in `mom/config.py` (`experts`, `top_k`, `router_mode`,
+SGMS flags live in `sgms/config.py` (`experts`, `top_k`, `router_mode`,
 `shared_expert`, `decay_on_skip`/`gdr_decay_on_skip`, `lambda_bal`, `lambda_z`,
 `router_surprise_scale`).
 
@@ -391,22 +392,22 @@ engram/
 │   ├── scan.py               # associative_scan + two-buffer Hillis-Steele backends
 │   ├── scan_reference.py     # preserved hand-derived Blelloch (teaching/equivalence)
 │   └── block.py              # BLOCK_REGISTRY + ENGRAMBlock protocol + build_block dispatch
-├── saber/                    # surprise-adaptive memory layer (supplies surprise → MoM routing)
+├── saber/                    # surprise-adaptive memory layer (supplies surprise → SGMS routing)
 ├── training/                 # Trainer, CLI (train.py), metrics (macro-AUROC), loops
 ├── baselines/                # ResNet1D, small Transformer
 └── data/                     # ecg / image / audio loaders (+ pure ptbxl_tasks mapping)
-mom/                          # Mixture of Memory Primitives (see MoM section)
+sgms/                          # Surprise-Gated Mixer Selection (see SGMS section)
 ├── router.py masking.py block.py losses.py state.py registry.py config.py
 ├── model.py baselines.py reference.py train.py
 ├── tasks/                    # mqar.py, passkey.py, state_tracking.py
 └── analysis/                 # heatmaps, specialization, knockout, composition, dynamics
-configs/mom/                  # spike.yaml, v1.yaml, v1_k2.yaml, v1_swa.yaml
+configs/sgms/                  # spike.yaml, v1.yaml, v1_k2.yaml, v1_swa.yaml
 EXPERIMENTS.md                # locked benchmark matrix + honest gaps
 paper/PAPER_DRAFT.md          # 4-page workshop manuscript skeleton
 scripts/                      # run_benchmarks*.sh, bench_throughput.py, aggregate_results.py,
                               # infer_ecg.py, infer_image.py, validate_ptbxl_tasks.py,
-                              # prepare_audio.py, mom_spike_gate.py, mom_analysis.py
-tests/                        # pytest suite (+ tests/mom/, test_saber.py, test_swa_streaming.py)
+                              # prepare_audio.py, sgms_spike_gate.py, sgms_analysis.py
+tests/                        # pytest suite (+ tests/sgms/, test_saber.py, test_swa_streaming.py)
 ```
 
 ## Honest scope
@@ -416,7 +417,7 @@ training run per modality), not yet a single-set-of-weights joint model — that
 true "modality-agnostic" result is the follow-up. The architecture is grounded
 in the 2024–2026 frontier (Mamba-2/3, Gated DeltaNet, FLA); the from-scratch
 reference implementations and their equivalence tests are the contribution
-alongside the cross-modal portability study. MoM additionally treats the
+alongside the cross-modal portability study. SGMS additionally treats the
 *composition* of memory primitives as a learned, input-dependent decision
 rather than a design constant. See [EXPERIMENTS.md](EXPERIMENTS.md) for what
 still needs doing before submission.

@@ -297,11 +297,11 @@ class GatedDeltaRule(nn.Module):
     ) -> tuple[torch.Tensor, DeltaState]:
         """GDR prefill/decode.
 
-        Additive MoM flags (§3.4): ``write_mask`` [B, T] masks k, v and β on
+        Additive SGMS flags (§3.4): ``write_mask`` [B, T] masks k, v and β on
         non-routed steps, so the transition ``(I − β̃ k̃ k̃ᵀ)`` collapses to
         identity and the write vanishes.  With ``freeze_on_mask`` the α
         forget gate is additionally neutralised to 1 on a miss, so the state
-        passes through exactly (the spec's α-free GDR semantics; MoM's
+        passes through exactly (the spec's α-free GDR semantics; SGMS's
         default for GDR).  Both flags default off, preserving the original
         behaviour.
         """

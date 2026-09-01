@@ -59,7 +59,7 @@ engram-infer-image = "scripts.infer_image:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engram*", "mom*"]
+include = ["engram*", "sgms*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -73,7 +73,7 @@ markers = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["engram", "mom", "tests", "scripts", "train.py"]
+src = ["engram", "sgms", "tests", "scripts", "train.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

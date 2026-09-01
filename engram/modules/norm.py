@@ -19,7 +19,7 @@ class RMSNorm(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [..., dim]
         # Accumulate in float32 for bf16/fp16 stability, but keep float64 as
-        # float64 so fp64 gradcheck / equivalence tests stay exact (MoM §9).
+        # float64 so fp64 gradcheck / equivalence tests stay exact (SGMS §9).
         acc = x if x.dtype in (torch.float32, torch.float64) else x.float()
         norm = acc.pow(2).mean(dim=-1, keepdim=True).add(self.eps).rsqrt()
         return (acc * norm).to(x.dtype) * self.weight

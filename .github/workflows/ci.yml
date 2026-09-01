@@ -27,10 +27,10 @@ jobs:
           pip install -e ".[dev,test]"
 
       - name: Ruff check
-        run: ruff check engram mom tests scripts train.py
+        run: ruff check engram sgms tests scripts train.py
 
       - name: Ruff format check
-        run: ruff format --check engram mom tests scripts train.py
+        run: ruff format --check engram sgms tests scripts train.py
 
       - name: Pytest (fast)
         run: pytest -m "not slow and not gpu"
