@@ -126,6 +126,32 @@ batch size 8. It is meant for **pipeline validation and quick iteration only**;
 do not quote these numbers as the paper's main results. Add optional ablations
 with `RUN_ABLATIONS=1` (adds ~2× runtime).
 
+All scripts report the **best-val checkpoint** (`best_*.pt`, selected on
+`val_macro_auc`), never the final epoch — on this task val macro-AUC peaks
+around epoch 3–7 then declines while train acc keeps climbing, so final-epoch
+numbers would be misleading. The scripts also enable **early stopping**
+(`EARLY_STOPPING=3` patience by default, override with `EARLY_STOPPING=0` to
+run all `EPOCHS`): training stops after the patience budget without an
+improvement and restores the best checkpoint, so the reported metric is
+unchanged but wasted epochs are skipped.
+
+Last smoke run (2026-09-08, `SEEDS="0 1 2" EPOCHS=10`, logged to
+`RESULTS=output/benchmarks_laptop`; earlier 1-seed/2-epoch smoke at
+`output/benchmarks_laptop_smoke`):
+
+| Config | val macro-AUC (mean ± std, 3 seeds) |
+|---|---|
+| ENGRAM hybrid (SSD+GDR) | 0.8972 ± 0.0021 |
+| Mamba-2 only (SSD) | 0.8960 ± 0.0018 |
+| Gated DeltaNet only | 0.8978 ± 0.0048 |
+| ENGRAM legacy (S4D+GDR) | 0.8968 ± 0.0024 |
+| ResNet1D | 0.9024 ± 0.0008 |
+| small Transformer | 0.8822 ± 0.0016 |
+
+Held-out PTB-XL test fold for the hybrid (best-val checkpoints,
+`infer_ecg.py --ptbxl-test`): **0.8929 ± 0.0023** macro-AUC (seeds
+0.8909 / 0.8953 / 0.8925).
+
 ## Honest gaps / TODO before submission
 
 - **All six PTB-XL task groups ARE wired** (`--ecg-task superdiag|subdiag|diag|

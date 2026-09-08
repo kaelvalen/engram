@@ -47,8 +47,9 @@ The per-layer role tokens are defined in `engram.layer_tokens` as `("s4", "delta
 function; new mixers can be registered with `@register_block("token")` without
 changing the core config or model code.
 
-> **Status (2026-07-18): architecture + training validated end-to-end on an
-> RTX 5060 laptop GPU; the full paper matrix is not yet run.**
+> **Status (2026-09-08): architecture + training re-validated end-to-end on the
+> RTX 5060 laptop GPU (see the pipeline-validation table below); the full paper
+> matrix is not yet run.** (first validation: 2026-07-18)
 > 270+ tests pass (numerical equivalence, fp64 gradcheck, streaming
 > state-passing, property-based). All six PTB-XL task vocabularies are
 > validated against the real `scp_statements.csv` (5/23/44/19/12/71 classes —
@@ -61,21 +62,25 @@ changing the core config or model code.
 ## Pipeline validation (laptop config, RTX 5060 — NOT paper numbers)
 
 Protocol-identical but reduced (`hidden_dim=64, num_layers=4, batch 8`) run on
-PTB-XL super-diag, **2 epochs, 1 seed**, macro-AUROC:
+PTB-XL super-diag, **10 epochs, 3 seeds**, best-val macro-AUROC (mean ± std):
 
-| Config | val macro-AUC |
+| Config | val macro-AUC (mean ± std) |
 |---|---|
-| **ENGRAM hybrid (SSD+GDR)** | **0.8908** |
-| Gated DeltaNet only | 0.8906 |
-| ENGRAM legacy (S4D+GDR) | 0.8882 |
-| Mamba-2 only (SSD) | 0.8836 |
-| ResNet1D | 0.8828 |
-| small Transformer | 0.8769 |
+| **ENGRAM hybrid (SSD+GDR)** | **0.8972 ± 0.0021** |
+| Gated DeltaNet only | 0.8978 ± 0.0048 |
+| ENGRAM legacy (S4D+GDR) | 0.8968 ± 0.0024 |
+| Mamba-2 only (SSD) | 0.8960 ± 0.0018 |
+| ResNet1D | 0.9024 ± 0.0008 |
+| small Transformer | 0.8822 ± 0.0016 |
 
-Reproduce with `DATA_ROOT=./datasets SEEDS="0" EPOCHS=2 bash scripts/run_benchmarks_laptop.sh`
+Same protocol on the held-out **PTB-XL test fold** (`infer_ecg.py --ptbxl-test`,
+best-val checkpoints): ENGRAM hybrid **0.8929 ± 0.0023** macro-AUC (seeds
+0.8909 / 0.8953 / 0.8925).
+
+Reproduce with `DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=10 bash scripts/run_benchmarks_laptop.sh`
 then `python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc`.
 Do not quote these as the paper's main results — they are pipeline validation
-at ~250 K params, 1 seed, 2 epochs.
+at ~250 K params on a laptop GPU.
 
 ## Install
 
@@ -170,7 +175,7 @@ works behind TLS-intercepting proxies); output goes to `datasets/audio/{train,va
 ## SGMS — Surprise-Gated Mixer Selection (`sgms/`)
 
 SGMS replaces ENGRAM's fixed block ratio with a **bank of heterogeneous memory
-experts** (SSD, GDR; SWA scaffolded for v2) and a lightweight **per-token
+experts** (SSD, GDR, optionally SWA) and a lightweight **per-token
 router**: for every token, the router selects which memory primitive updates
 its state and produces that token's output. The composition of the backbone
 becomes a learned function of the token stream rather than a hand-tuned
