@@ -111,9 +111,25 @@ class TokenRouter(nn.Module):
         # Seeded generator for mode="random" (B5): fixed seed ⇒ reproducible
         # assignments across reruns, independent of input values.
         self._generator: torch.Generator | None = None
+        self._generators: dict[str, torch.Generator] = {}
+        self._seed = seed
         if mode == "random":
             self._generator = torch.Generator()
             self._generator.manual_seed(seed)
+
+    def _generator_for(self, device: torch.device) -> torch.Generator:
+        """Return a generator living on the same device as the random draw."""
+        if device.type == "cpu":
+            if self._generator is None:
+                raise RuntimeError("random router generator was not initialized")
+            return self._generator
+        key = str(device)
+        generator = self._generators.get(key)
+        if generator is None:
+            generator = torch.Generator(device=device)
+            generator.manual_seed(self._seed)
+            self._generators[key] = generator
+        return generator
 
     def forward(
         self,
@@ -141,7 +157,7 @@ class TokenRouter(nn.Module):
             return RoutingOutput(gates, mask, idx.clone(), None, gates.clone())
 
         if self.mode == "random":
-            scores = torch.rand(B, T, K, generator=self._generator, device=h.device)
+            scores = torch.rand(B, T, K, generator=self._generator_for(h.device), device=h.device)
             idx = scores.topk(k, dim=-1).indices
             mask = topk_mask(idx, K).to(h.dtype)
             gates = mask / k

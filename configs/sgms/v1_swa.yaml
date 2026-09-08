@@ -1,6 +1,5 @@
-# sgms-v1-swa (spec §4): three-primitive bank {SSD, GDR, SWA} — v2.
-# The SWA expert is scaffolded in sgms.registry and raises NotImplementedError
-# when built (§1.4); this config activates in v2.
+# sgms-v1-swa (spec §4): three-primitive bank {SSD, GDR, SWA}.
+# The SWA expert is available now that its streaming KV-cache is implemented.
 experiment: sgms-v1-swa
 seeds: [0, 1, 2]
 

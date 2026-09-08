@@ -29,7 +29,10 @@ def combine_expert_outputs(outputs: list[torch.Tensor], gates: torch.Tensor) -> 
     """
     if len(outputs) != gates.shape[-1]:
         raise ValueError(f"{len(outputs)} outputs but gates have K={gates.shape[-1]}")
-    y = torch.zeros_like(outputs[0])
-    for e, y_e in enumerate(outputs):
-        y = y + gates[..., e : e + 1] * y_e
-    return y
+    if not outputs:
+        raise ValueError("at least one expert output is required")
+    # Keep the expert axis explicit and reduce once.  This avoids K Python-side
+    # accumulation passes and K intermediate tensors while preserving the
+    # exact gated sum.
+    stacked = torch.stack(outputs, dim=2)  # [B,T,K,D]
+    return (stacked * gates.unsqueeze(-1)).sum(dim=2)

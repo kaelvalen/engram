@@ -1,8 +1,8 @@
 """Expert registry (spec §3.2, §8).
 
-Maps expert names to the ENGRAM mixer implementations.  ENGRAM blocks are
+Maps expert names to the ENGRAM mixer implementations. ENGRAM blocks are
 consumed, never modified beyond the additive write-mask flags (§12.1).
-"swa" is scaffolded for v2 and raises NotImplementedError when built (§1.4).
+The optional SWA expert is available when included in the expert bank.
 """
 
 from __future__ import annotations

@@ -80,9 +80,15 @@ class HybridLM(nn.Module):
         self.lm_head = nn.Linear(cfg.hidden_dim, vocab_size, bias=False)
 
     def forward(self, input_ids: torch.Tensor, states: list | None = None) -> dict:
+        if input_ids.ndim != 2 or input_ids.shape[1] == 0:
+            raise ValueError(f"input_ids must be [B,T] with T>0, got {tuple(input_ids.shape)}")
+        if input_ids.dtype != torch.long:
+            raise TypeError(f"input_ids must have dtype torch.long, got {input_ids.dtype}")
         h = self.embed(input_ids)
         if states is None:
             states = [None] * len(self.blocks)
+        elif len(states) != len(self.blocks):
+            raise ValueError(f"expected {len(self.blocks)} block states, got {len(states)}")
         new_states = []
         for block, st in zip(self.blocks, states):
             conv_state = st[0] if st is not None else None

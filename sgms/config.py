@@ -7,6 +7,7 @@ default to the corresponding ENGRAM block values (§3.2).
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 
 import yaml
@@ -60,7 +61,7 @@ class SGMSConfig:
     gate_bias_init: float = 4.0
     scan_backend: str = "auto"
     delta_backend: str = "reference"
-    swa_window: int = 512  # v2
+    swa_window: int = 512
 
     # Shared block anatomy (ENGRAM-exact residual/pre-norm structure, §3.5)
     conv_kernel_size: int = 4
@@ -72,6 +73,11 @@ class SGMSConfig:
             self.experts = tuple(self.experts)
         if not self.experts:
             raise ValueError("SGMSConfig.experts must be non-empty")
+        from .registry import EXPERT_NAMES
+
+        unknown = sorted(set(self.experts) - set(EXPERT_NAMES))
+        if unknown:
+            raise ValueError(f"unknown experts {unknown}; allowed: {EXPERT_NAMES}")
         if len(set(self.experts)) != len(self.experts):
             raise ValueError(f"duplicate experts: {self.experts}")
         if self.router_mode not in ROUTER_MODES:
@@ -80,8 +86,23 @@ class SGMSConfig:
             raise ValueError(f"top_k must be in [1, {len(self.experts)}], got {self.top_k}")
         if self.shared_expert is not None and self.shared_expert != "ssd":
             raise ValueError("shared_expert must be None or 'ssd' (spec §3.7)")
+        if self.hidden_dim <= 0 or self.num_heads <= 0 or self.num_layers <= 0:
+            raise ValueError("hidden_dim, num_heads, and num_layers must be positive")
         if self.hidden_dim % self.num_heads != 0:
             raise ValueError("hidden_dim must be divisible by num_heads")
+        if "swa" in self.experts and (self.hidden_dim // self.num_heads) % 2:
+            raise ValueError("SWA requires an even per-head dimension for RoPE")
+        for name in (
+            "ssd_state_dim",
+            "delta_chunk_size",
+            "swa_window",
+            "conv_kernel_size",
+            "ffn_expand",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        if not (0.0 <= self.dropout < 1.0):
+            raise ValueError("dropout must be in [0, 1)")
         if self.lambda_bal < 0 or self.lambda_z < 0:
             raise ValueError("loss weights must be non-negative")
         if self.router_surprise_scale < 0:
@@ -96,6 +117,10 @@ class SGMSConfig:
             )
         if self.surprise_pred_loss_weight < 0:
             raise ValueError("surprise_pred_loss_weight must be non-negative")
+        if self.router_init_std < 0 or self.router_surprise_scale < 0:
+            raise ValueError("router scales/std must be non-negative")
+        if not math.isfinite(self.gate_bias_init):
+            raise ValueError("gate_bias_init must be finite")
         if not (0 < self.s4_dt_min < self.s4_dt_max):
             raise ValueError("s4_dt_min must be < s4_dt_max")
 
