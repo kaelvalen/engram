@@ -11,22 +11,32 @@ should report CUDA numbers from the user's own hardware, not these CPU values.
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from pathlib import Path
 
-import torch
-from engram.modules.delta import GatedDeltaRule, _load_fla
-from engram.modules.ssd import SSDMixer
+# Triton's NVIDIA backend probes /sbin/ldconfig by default.  NixOS keeps the
+# active driver outside the linker cache, so make the supported explicit path
+# available before importing torch/Triton.
+_nixos_cuda_lib = Path("/run/opengl-driver/lib")
+if (_nixos_cuda_lib / "libcuda.so.1").exists():
+    os.environ.setdefault("TRITON_LIBCUDA_PATH", str(_nixos_cuda_lib))
+
+import torch  # noqa: E402
+from engram.modules.delta import GatedDeltaRule, _load_fla  # noqa: E402
+from engram.modules.ssd import SSDMixer  # noqa: E402
 
 
 def _timed(fn, iters: int, warmup: int, device: str) -> float:
     for _ in range(warmup):
         fn()
-    if device == "cuda":
+    is_cuda = torch.device(device).type == "cuda"
+    if is_cuda:
         torch.cuda.synchronize()
     t0 = time.perf_counter()
     for _ in range(iters):
         fn()
-    if device == "cuda":
+    if is_cuda:
         torch.cuda.synchronize()
     return (time.perf_counter() - t0) / iters
 
@@ -57,7 +67,7 @@ def bench_delta(device, B, T, D, H, iters, warmup):
     with torch.no_grad():
         dt = _timed(lambda: m(x), iters, warmup, device)
     print(f"  {'reference':10s}: {B * T / dt:>12,.0f} tok/s  ({dt * 1e3:.2f} ms)")
-    if _load_fla() is not None and device == "cuda":
+    if _load_fla() is not None and torch.device(device).type == "cuda":
         mf = GatedDeltaRule(D, H, backend="fla").to(device).eval()
         with torch.no_grad():
             dt = _timed(lambda: mf(x), iters, warmup, device)

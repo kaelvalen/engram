@@ -29,6 +29,7 @@
         # Nix store'daki GCC runtime kütüphanelerini PATH'a eklemek, wheel
         # içindeki native extension'ların çalışması için gerekli.
         gccLib = pkgs.stdenv.cc.cc.lib;
+        zlib = pkgs.zlib;
       in
       {
         devShells.default = pkgs.mkShell {
@@ -57,10 +58,19 @@
             # version may not match the currently loaded kernel driver
             # (critical for Blackwell/sm_120 and similar new hardware).
             if [ -d /run/opengl-driver/lib ]; then
-              export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${cudaToolkit}/lib:${gccLib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:/run/opengl-driver-32/lib:${cudaToolkit}/lib:${gccLib}/lib:${zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              # NixOS does not provide /sbin/ldconfig, which Triton otherwise
+              # invokes while discovering libcuda.so.1. Point Triton at the
+              # running driver's libraries explicitly.
+              export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
             else
-              export LD_LIBRARY_PATH="${cudaToolkit}/lib:${gccLib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export LD_LIBRARY_PATH="${cudaToolkit}/lib:${gccLib}/lib:${zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              unset TRITON_LIBCUDA_PATH
             fi
+
+            # Triton compiles a small host extension and needs Python.h from
+            # the Nix-provided interpreter rather than the user profile.
+            export CPATH="${pkgs.python312}/include/python3.12''${CPATH:+:$CPATH}"
 
             VENV_DIR="$PWD/.venv"
             PYTHON_BIN="${pkgs.python312}/bin/python3.12"

@@ -18,12 +18,17 @@
 #   DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks_rtx5090.sh
 set -euo pipefail
 
+if [[ -z "${TRITON_LIBCUDA_PATH:-}" && -e /run/opengl-driver/lib/libcuda.so.1 ]]; then
+  export TRITON_LIBCUDA_PATH=/run/opengl-driver/lib
+fi
+
 # Blackwell / large-VRAM friendly memory allocator.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 DATA_ROOT="${DATA_ROOT:-./datasets}"
 SEEDS="${SEEDS:-0 1 2}"
 EPOCHS="${EPOCHS:-50}"
+EARLY_STOPPING="${EARLY_STOPPING:-3}"
 AMP="${AMP:-bf16}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
 COMPILE="${COMPILE:-1}"
@@ -31,14 +36,17 @@ RESULTS="${RESULTS:-output/benchmarks_rtx5090}"
 mkdir -p "$RESULTS"
 
 # Full paper backbone budget (~8M params).
-COMMON="--hidden-dim 256 --num-layers 12 --num-heads 8 --batch-size $BATCH_SIZE --amp $AMP --data-root $DATA_ROOT --epochs $EPOCHS --gradient-checkpointing"
+COMMON="--hidden-dim 256 --num-layers 12 --num-heads 8 --batch-size $BATCH_SIZE --amp $AMP --data-root $DATA_ROOT --epochs $EPOCHS --gradient-checkpointing --early-stopping $EARLY_STOPPING"
 [[ "$COMPILE" == "1" ]] && COMMON="$COMMON --compile"
 
 run () {  # run <name> <seed> <extra-args...>
   local name="$1"; local seed="$2"; shift 2
   # PTB-XL is evaluated multi-label (macro AUROC) per the paper protocol.
   local extra=""
-  case " $* " in *" --modality ecg "*) extra="--ecg-multilabel";; esac
+  case " $* " in
+    *" --modality ecg "*) extra="--ecg-multilabel";;
+    *" --modality audio "*) extra="--no-audio-synthetic";;
+  esac
   echo ">>> [$name | seed=$seed] $* $extra"
   PYTHONHASHSEED="$seed" engram-train $COMMON --seed "$seed" --output-dir "$RESULTS/$name/seed$seed" "$@" $extra \
     2>&1 | tee "$RESULTS/${name}_seed${seed}.log"
