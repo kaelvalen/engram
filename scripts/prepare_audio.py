@@ -7,8 +7,8 @@ and the mel spectrogram uses torchaudio's pure-torch transform (no
 TorchCodec / ffmpeg dependency).
 
 Output: TensorDataset(feats[num_frames=128, mel=64], labels) at
-``<root>/train.pt`` and ``<root>/val.pt`` (official validation/testing
-split lists), limited to the 10 core commands.
+``<root>/train.pt``, ``<root>/val.pt`` and ``<root>/test.pt`` using the
+official validation/testing split lists, limited to the 10 core commands.
 
 Usage:
     python scripts/prepare_audio.py --root datasets/audio [--limit N]
@@ -43,7 +43,9 @@ def _download_and_extract(root: Path) -> Path:
         urllib.request.urlretrieve(URL, tar_path)
     print("extracting …", flush=True)
     with tarfile.open(tar_path) as tf:
-        tf.extractall(root)
+        # Python 3.12+'s data filter rejects path traversal and unsafe links
+        # in the downloaded archive before writing anything outside root.
+        tf.extractall(root, filter="data")
     return out_dir
 
 
@@ -60,6 +62,15 @@ def _split_sets(sc_root: Path) -> tuple[set, set]:
         if f.is_file():
             target.update(line.strip() for line in f.read_text().splitlines() if line.strip())
     return val, test
+
+
+def _split_for_path(rel: str, val_list: set[str], test_list: set[str]) -> str:
+    """Map an official Speech Commands relative path to its split."""
+    if rel in test_list:
+        return "test"
+    if rel in val_list:
+        return "val"
+    return "train"
 
 
 def main() -> int:
@@ -81,7 +92,7 @@ def main() -> int:
 
     mel = MelSpectrogram(sample_rate=SAMPLE_RATE, n_mels=MEL_BINS, hop_length=125)
     label_index = {c: i for i, c in enumerate(COMMANDS)}
-    buckets = {"train": ([], []), "val": ([], [])}
+    buckets = {"train": ([], []), "val": ([], []), "test": ([], [])}
 
     t0 = time.time()
     if args.source == "hf":
@@ -98,7 +109,7 @@ def main() -> int:
             allow_patterns="v0.02/*",
         )
         files = sorted(Path(local).rglob("*.parquet"))
-        split_map = {"train": "train", "validation": "val", "test": "val"}
+        split_map = {"train": "train", "validation": "val", "test": "test"}
         n = 0
         for pf in files:
             hf_split = pf.parent.name
@@ -139,7 +150,7 @@ def main() -> int:
                     feats = torch.nn.functional.pad(feats, (0, 0, 0, NUM_FRAMES - feats.shape[0]))
                 feats = feats[:NUM_FRAMES]
                 rel = f"{label}/{wav_path.name}"
-                split = "val" if rel in val_list or rel in test_list else "train"
+                split = _split_for_path(rel, val_list, test_list)
                 buckets[split][0].append(feats)
                 buckets[split][1].append(label_index[label])
                 if n % 5000 == 0:
