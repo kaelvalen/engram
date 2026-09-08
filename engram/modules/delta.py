@@ -66,7 +66,14 @@ class GatedDeltaRule(nn.Module):
         backend: str = "reference",
     ):
         super().__init__()
-        assert hidden_dim % num_heads == 0
+        if hidden_dim <= 0 or num_heads <= 0:
+            raise ValueError("hidden_dim and num_heads must be positive")
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if backend not in ("reference", "fla"):
+            raise ValueError(f"unknown delta backend: {backend!r}")
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads

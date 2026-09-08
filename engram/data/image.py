@@ -10,9 +10,14 @@ def patchify(x: torch.Tensor, patch_size: int = 4) -> torch.Tensor:
     x: [B, C, H, W]
     returns: [B, num_patches, patch_size*patch_size*C]
     """
+    if x.ndim != 4:
+        raise ValueError(f"patchify expects [B,C,H,W], got {tuple(x.shape)}")
+    if patch_size <= 0:
+        raise ValueError(f"patch_size must be positive, got {patch_size}")
     B, C, H, W = x.shape
     P = patch_size
-    assert H % P == 0 and W % P == 0
+    if H % P != 0 or W % P != 0:
+        raise ValueError(f"image size {(H, W)} must be divisible by patch_size={P}")
 
     x = x.reshape(B, C, H // P, P, W // P, P)
     x = x.permute(0, 2, 4, 3, 5, 1)  # [B, H/P, W/P, P, P, C]

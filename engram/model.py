@@ -38,8 +38,14 @@ class ENGRAMBackbone(nn.Module):
         x: torch.Tensor,  # [B, T, hidden_dim]
         states: list[BlockState | None] | None = None,
     ) -> tuple[torch.Tensor, list[BlockState]]:
+        if x.ndim != 3 or x.shape[1] == 0 or x.shape[2] != self.cfg.hidden_dim:
+            raise ValueError(
+                f"ENGRAMBackbone expects [B,T,{self.cfg.hidden_dim}] with T>0, got {tuple(x.shape)}"
+            )
         if states is None:
             states = [None] * len(self.blocks)
+        elif len(states) != len(self.blocks):
+            raise ValueError(f"expected {len(self.blocks)} block states, got {len(states)}")
 
         new_states = []
         for block, layer_type, state in zip(self.blocks, self.pattern, states):
@@ -107,6 +113,8 @@ class ENGRAMForClassification(nn.Module):
             raise KeyError(
                 f"Unknown modality '{modality}'. Registered: {[m.name for m in self.cfg.modalities]}"
             )
+        if x.ndim != 3 or x.shape[1] == 0:
+            raise ValueError(f"Input must be [B,T,D] with T>0, got {tuple(x.shape)}")
         if x.shape[-1] != mcfg.input_dim:
             raise ValueError(
                 f"Input last dim {x.shape[-1]} does not match "
@@ -132,10 +140,21 @@ class ENGRAMForClassification(nn.Module):
         out = {"logits": logits, "states": new_states}
 
         if labels is not None:
+            if labels.shape[0] != logits.shape[0]:
+                raise ValueError(
+                    f"labels batch {labels.shape[0]} does not match input batch {logits.shape[0]}"
+                )
             if mcfg.multilabel:
                 # multi-hot targets [B, num_classes]; BCEWithLogits over each class.
+                if labels.shape != logits.shape:
+                    raise ValueError(
+                        f"multi-label targets must have shape {tuple(logits.shape)}, "
+                        f"got {tuple(labels.shape)}"
+                    )
                 out["loss"] = nn.functional.binary_cross_entropy_with_logits(logits, labels.float())
             else:
+                if labels.ndim != 1:
+                    raise ValueError(f"single-label targets must be [B], got {tuple(labels.shape)}")
                 out["loss"] = nn.functional.cross_entropy(logits, labels)
 
         return out

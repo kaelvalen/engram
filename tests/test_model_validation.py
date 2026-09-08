@@ -46,6 +46,12 @@ def test_forward_sequence_length_one():
     assert out["logits"].shape == (2, 5)
 
 
+def test_forward_rejects_empty_sequence():
+    model = ENGRAMForClassification(_tiny_cfg())
+    with pytest.raises(ValueError, match="T>0"):
+        model(torch.randn(2, 0, 12), modality="ecg")
+
+
 def test_nan_input_propagates():
     model = ENGRAMForClassification(_tiny_cfg())
     x = torch.full((2, 8, 12), float("nan"))

@@ -60,7 +60,7 @@ def test_fit_window_right_pads_shorter():
 
 def test_patchify_raises_on_indivisible_size():
     x = torch.randn(2, 3, 32, 32)
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         patchify(x, patch_size=5)  # 32 % 5 != 0
 
 
