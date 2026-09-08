@@ -8,6 +8,7 @@ import torch
 
 from engram.config import ENGRAMConfig, ModalityConfig
 from engram.model import ENGRAMForClassification
+from engram.training.checkpoint import load_checkpoint
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def load_model(
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    ckpt = load_checkpoint(checkpoint_path, map_location=device)
     missing = {"model_state", "cfg"} - set(ckpt.keys())
     if missing:
         raise ValueError(

@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from engram.config import ENGRAMConfig
 from engram.model import ENGRAMForClassification
 
-from .checkpoint import cfg_to_dict, load_checkpoint, save_checkpoint
+from .checkpoint import cfg_to_dict, load_checkpoint, normalize_model_state, save_checkpoint
 from .loops import evaluate_epoch, train_epoch
 from .utils import get_rng_state, set_rng_state
 
@@ -58,6 +58,21 @@ class TrainerConfig:
 
 class Trainer:
     """Shared training loop: cosine LR, best checkpoint, optional TB / W&B, early stopping."""
+
+    def _state_model(self) -> ENGRAMForClassification:
+        """Return the uncompiled module when ``torch.compile`` wrapped it.
+
+        Compiled modules prefix state-dict keys with ``_orig_mod.``. Keeping
+        checkpoints in the model's native key space makes them loadable by the
+        regular inference path as well as by a compiled trainer on resume.
+        """
+        return getattr(self.model, "_orig_mod", self.model)
+
+    def _load_model_state(self, state: dict[str, Any]) -> None:
+        self._state_model().load_state_dict(normalize_model_state(state))
+
+    def _model_state_dict(self) -> dict[str, Any]:
+        return self._state_model().state_dict()
 
     def __init__(
         self,
@@ -138,7 +153,7 @@ class Trainer:
 
         if resume_from is not None:
             ckpt = load_checkpoint(resume_from, map_location=self.device)
-            self.model.load_state_dict(ckpt["model_state"])
+            self._load_model_state(ckpt["model_state"])
             if "optimizer_state" in ckpt:
                 opt.load_state_dict(ckpt["optimizer_state"])
             if "scheduler_state" in ckpt:
@@ -203,7 +218,7 @@ class Trainer:
                 save_checkpoint(
                     output_dir / best_filename,
                     epoch=epoch,
-                    model_state=self.model.state_dict(),
+                    model_state=self._model_state_dict(),
                     cfg=self.cfg,
                     metrics=dict(metrics),
                     optimizer_state=opt.state_dict(),
@@ -218,7 +233,7 @@ class Trainer:
             save_checkpoint(
                 output_dir / "last.pt",
                 epoch=epoch,
-                model_state=self.model.state_dict(),
+                model_state=self._model_state_dict(),
                 cfg=self.cfg,
                 metrics=dict(metrics),
                 optimizer_state=opt.state_dict(),
@@ -239,7 +254,7 @@ class Trainer:
                     if best_path.exists():
                         logger.info("Early stopping; restoring best checkpoint from %s", best_path)
                         ckpt = load_checkpoint(best_path, map_location=self.device)
-                        self.model.load_state_dict(ckpt["model_state"])
+                        self._load_model_state(ckpt["model_state"])
                     break
 
         if self._writer is not None:

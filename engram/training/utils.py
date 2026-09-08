@@ -9,11 +9,34 @@ import torch
 logger = logging.getLogger(__name__)
 
 
+def _serialize_numpy_state(state: tuple) -> dict[str, object]:
+    name, keys, pos, has_gauss, cached_gaussian = state
+    return {
+        "bit_generator": name,
+        "keys": keys.tolist(),
+        "pos": pos,
+        "has_gauss": has_gauss,
+        "cached_gaussian": cached_gaussian,
+    }
+
+
+def _deserialize_numpy_state(state: object) -> tuple:
+    if isinstance(state, dict):
+        return (
+            state["bit_generator"],
+            np.asarray(state["keys"], dtype=np.uint32),
+            state["pos"],
+            state["has_gauss"],
+            state["cached_gaussian"],
+        )
+    return state
+
+
 def get_rng_state() -> dict[str, object]:
     """Capture the current RNG state for PyTorch (CPU + all CUDA devices), NumPy, and Python."""
     state: dict[str, object] = {
         "torch": torch.get_rng_state(),
-        "numpy": np.random.get_state(),
+        "numpy": _serialize_numpy_state(np.random.get_state()),
         "python": random.getstate(),
     }
     if torch.cuda.is_available():
@@ -24,7 +47,7 @@ def get_rng_state() -> dict[str, object]:
 def set_rng_state(state: dict[str, object]) -> None:
     """Restore RNG states captured by :func:`get_rng_state`."""
     torch.set_rng_state(state["torch"])
-    np.random.set_state(state["numpy"])
+    np.random.set_state(_deserialize_numpy_state(state["numpy"]))
     random.setstate(state["python"])
     if "torch_cuda" in state and torch.cuda.is_available():
         torch.cuda.set_rng_state_all(state["torch_cuda"])

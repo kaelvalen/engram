@@ -4,7 +4,7 @@ import pytest
 import torch
 from engram.config import ENGRAMConfig, ModalityConfig
 from engram.model import ENGRAMForClassification
-from engram.training.checkpoint import load_checkpoint, save_checkpoint
+from engram.training.checkpoint import load_checkpoint, normalize_model_state, save_checkpoint
 
 
 def _tiny_cfg() -> ENGRAMConfig:
@@ -42,3 +42,10 @@ def test_load_checkpoint_roundtrip(tmp_path):
     assert "model_state" in ckpt
     assert "cfg" in ckpt
     assert ckpt["epoch"] == 1
+
+
+def test_normalize_compiled_state_dict_prefix():
+    state = {"_orig_mod.layer.weight": torch.ones(2, 2)}
+    normalized = normalize_model_state(state)
+    assert list(normalized) == ["layer.weight"]
+    assert torch.equal(normalized["layer.weight"], state["_orig_mod.layer.weight"])
