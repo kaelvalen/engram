@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Cache whether torch exposes a usable associative_scan HOP.
 _ASSOC_FN = None
 _ASSOC_CHECKED = False
+_ASSOC_BROKEN = False
 
 
 def _get_assoc_fn():
@@ -141,8 +142,9 @@ def assoc_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     docs warn of possible miscompiles, so we guard with try/except and a
     Hillis-Steele fallback that is always numerically correct.
     """
+    global _ASSOC_BROKEN, _ASSOC_FN
     fn = _get_assoc_fn()
-    if fn is None:
+    if fn is None or _ASSOC_BROKEN:
         return hillis_steele_recurrence(a, b)
 
     scan_dim = a.dim() - 2  # time axis as a positive index
@@ -156,6 +158,11 @@ def assoc_recurrence(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         _, h = fn(combine, (a, b), dim=scan_dim, combine_mode="generic")
         return h
     except Exception as exc:
+        # A broken HOP implementation otherwise raises and logs on every
+        # batch, adding exception overhead to the hot path.  Once a build has
+        # rejected this operation, pin the backend to the known-correct scan.
+        _ASSOC_BROKEN = True
+        _ASSOC_FN = None
         logger.warning(
             "torch.associative_scan failed (%s: %s); falling back to Hillis-Steele.",
             type(exc).__name__,

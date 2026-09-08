@@ -44,7 +44,14 @@ class SSDMixer(nn.Module):
         scan_backend: str = "auto",
     ):
         super().__init__()
-        assert hidden_dim % num_heads == 0
+        if hidden_dim <= 0 or num_heads <= 0:
+            raise ValueError("hidden_dim and num_heads must be positive")
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if state_dim <= 0:
+            raise ValueError("state_dim must be positive")
+        if not (0 < dt_min < dt_max):
+            raise ValueError("dt_min must be positive and less than dt_max")
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads  # P
@@ -82,13 +89,14 @@ class SSDMixer(nn.Module):
         return -torch.exp(self.A_log)  # [H], negative
 
     def empty_state(self, batch_size: int, device, dtype) -> torch.Tensor:
+        state_dtype = torch.float64 if dtype == torch.float64 else torch.float32
         return torch.zeros(
             batch_size,
             self.num_heads,
             self.head_dim,
             self.state_dim,
             device=device,
-            dtype=torch.float32,
+            dtype=state_dtype,
         )
 
     def _project(

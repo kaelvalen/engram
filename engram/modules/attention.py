@@ -14,6 +14,8 @@ from .norm import RMSNorm
 @functools.lru_cache(maxsize=8)
 def _build_rope_cache(seq_len: int, head_dim: int, device, base: float = 10000.0):
     """Standard rotary position embedding cos/sin caches: [T, head_dim]."""
+    if head_dim % 2:
+        raise ValueError(f"RoPE head_dim must be even, got {head_dim}")
     half = head_dim // 2
     freqs = 1.0 / (base ** (torch.arange(0, half, device=device).float() / half))
     t = torch.arange(seq_len, device=device).float()
@@ -83,7 +85,14 @@ class SlidingWindowAttention(nn.Module):
 
     def __init__(self, hidden_dim: int, num_heads: int, window: int = 128):
         super().__init__()
-        assert hidden_dim % num_heads == 0
+        if hidden_dim <= 0 or num_heads <= 0:
+            raise ValueError("hidden_dim and num_heads must be positive")
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if (hidden_dim // num_heads) % 2:
+            raise ValueError("SWA requires an even per-head dimension for RoPE")
+        if window <= 0:
+            raise ValueError("window must be positive")
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
@@ -224,15 +233,28 @@ class SlidingWindowAttention(nn.Module):
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
 
         # New cache: last W routed keys per batch (contiguous tail per stream).
-        new_k = torch.zeros(B, H, W, Dh, device=x.device, dtype=k_all.dtype)
-        new_v = torch.zeros(B, H, W, Dh, device=x.device, dtype=v_all.dtype)
         new_pos = pos_prev + m.long().sum(dim=1)
-        for b in range(B):
-            cand = key_valid[b].nonzero().flatten()
-            if cand.numel() > 0:
-                tail = cand[-W:]
-                new_k[b, :, -tail.numel() :] = k_all[b, :, tail]
-                new_v[b, :, -tail.numel() :] = v_all[b, :, tail]
+        # Pack each batch element's last W valid keys into a right-aligned
+        # cache without a Python loop.  `scatter_add_` is safe here because
+        # every retained valid key receives a unique destination slot; invalid
+        # positions contribute an all-zero source.
+        valid_rank = key_valid.long().cumsum(dim=1) - 1
+        valid_count = key_valid.sum(dim=1).long()
+        dropped = (valid_count - W).clamp_min(0)
+        kept = valid_count.clamp_max(W)
+        keep = key_valid & (valid_rank >= dropped.unsqueeze(1))
+        dest = (W - kept).unsqueeze(1) + valid_rank - dropped.unsqueeze(1)
+        dest = dest.clamp(0, W - 1)
+
+        def pack_tail(values: torch.Tensor) -> torch.Tensor:
+            values = values.transpose(1, 2)  # [B,S,H,Dh]
+            src = values * keep.unsqueeze(-1).unsqueeze(-1).to(values.dtype)
+            index = dest.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, H, Dh)
+            packed = torch.zeros(B, W, H, Dh, device=x.device, dtype=values.dtype)
+            return packed.scatter_add_(1, index, src).transpose(1, 2).contiguous()
+
+        new_k = pack_tail(k_all)
+        new_v = pack_tail(v_all)
         return self.out_proj(o), SWAState(k=new_k, v=new_v, pos=new_pos)
 
 

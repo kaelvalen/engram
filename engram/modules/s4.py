@@ -48,7 +48,14 @@ class S4SSM(nn.Module):
         scan_backend: str = "reference",
     ):
         super().__init__()
-        assert hidden_dim % num_heads == 0
+        if hidden_dim <= 0 or num_heads <= 0:
+            raise ValueError("hidden_dim and num_heads must be positive")
+        if hidden_dim % num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if state_mult <= 0:
+            raise ValueError("state_mult must be positive")
+        if not (0 < dt_min < dt_max):
+            raise ValueError("dt_min must be positive and less than dt_max")
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
@@ -102,11 +109,12 @@ class S4SSM(nn.Module):
         )
 
     def empty_state(self, batch_size, device, dtype):
+        complex_dtype = torch.complex128 if dtype == torch.float64 else torch.complex64
         return torch.zeros(
             batch_size,
             self.num_heads,
             self.state_dim,
-            dtype=torch.complex64,
+            dtype=complex_dtype,
             device=device,
         )
 
@@ -121,11 +129,11 @@ class S4SSM(nn.Module):
         # unlike Mamba which uses per-channel (D-specific) selective step sizes.
         dt = F.softplus(self.dt_proj(x_t)).view(B, H, Dh).mean(dim=-1)  # [B, H]
 
-        dA = dt.unsqueeze(-1).to(torch.complex64) * A.unsqueeze(0)  # [B, H, N]
+        dA = dt.unsqueeze(-1).to(A.dtype) * A.unsqueeze(0)  # [B, H, N]
         A_bar = torch.exp(dA)
         B_bar = torch.expm1(dA) / A.unsqueeze(0) * Bc.unsqueeze(0)
 
-        u_c = u.mean(dim=-1).to(torch.complex64).unsqueeze(-1)  # [B, H, 1]
+        u_c = u.mean(dim=-1).to(A.dtype).unsqueeze(-1)  # [B, H, 1]
         h = A_bar * h + B_bar * u_c  # [B, H, N]
 
         y = 2.0 * (Cc.unsqueeze(0).conj() * h).real.sum(dim=-1)  # [B, H]
@@ -144,11 +152,7 @@ class S4SSM(nn.Module):
         A = self._get_A()
         Bc, Cc = self._get_BC()
 
-        h0 = (
-            state.to(torch.complex64)
-            if state is not None
-            else self.empty_state(B, x.device, x.dtype)
-        )
+        h0 = state.to(A.dtype) if state is not None else self.empty_state(B, x.device, x.dtype)
 
         # decode path: single step, no scan overhead
         if T == 1:
@@ -162,7 +166,7 @@ class S4SSM(nn.Module):
         # prefill path: parallel scan over T
         u = self.in_proj(x).view(B, T, H, Dh).permute(0, 2, 1, 3)  # [B, H, T, Dh]
         dt = F.softplus(self.dt_proj(x)).view(B, T, H, Dh).permute(0, 2, 1, 3)
-        dt_s = dt.mean(dim=-1, keepdim=True).to(torch.complex64)  # [B, H, T, 1]
+        dt_s = dt.mean(dim=-1, keepdim=True).to(A.dtype)  # [B, H, T, 1]
 
         A_b = A.unsqueeze(0).unsqueeze(2)  # [1, H, 1, N]
         Bc_b = Bc.unsqueeze(0).unsqueeze(2)
@@ -172,7 +176,7 @@ class S4SSM(nn.Module):
         A_bar = torch.exp(dA)
         B_bar = torch.expm1(dA) / A_b * Bc_b
 
-        u_c = u.mean(dim=-1, keepdim=True).to(torch.complex64)  # [B, H, T, 1]
+        u_c = u.mean(dim=-1, keepdim=True).to(A.dtype)  # [B, H, T, 1]
         b_seq = B_bar * u_c  # [B, H, T, N]
 
         # fold initial state into first timestep
@@ -180,7 +184,7 @@ class S4SSM(nn.Module):
             b_seq = b_seq.clone()
             b_seq[:, :, 0] = b_seq[:, :, 0] + A_bar[:, :, 0] * h0
 
-        h = parallel_scan(A_bar.clone(), b_seq.clone(), self.scan_backend)  # [B, H, T, N]
+        h = parallel_scan(A_bar, b_seq, self.scan_backend)  # [B, H, T, N]
         h_new = h[:, :, -1, :]  # [B, H, N]
 
         # output
