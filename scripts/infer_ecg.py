@@ -17,10 +17,12 @@ import torch
 import torch.nn.functional as F
 from engram.data.ecg import _fit_window
 from engram.data.paths import resolve_ptbxl_root
+from engram.data.ptbxl_tasks import SUPERCLASSES, task_vocab
 from engram.inference import load_model
-from engram.training.loops import evaluate_macro_auc, evaluate_multilabel_auc
+from engram.training.loops import evaluate_multilabel_auc
+from engram.training.metrics import roc_auc_ovr_macro
 
-CLASSES = ["NORM", "MI", "STTC", "CD", "HYP"]
+CLASSES = list(SUPERCLASSES)
 CLASS_FULL = {
     "NORM": "Normal",
     "MI": "Myocardial Infarction",
@@ -31,9 +33,37 @@ CLASS_FULL = {
 
 
 def _normalize(signal: np.ndarray) -> np.ndarray:
+    if signal.ndim != 2 or signal.shape[1] != 12:
+        raise ValueError(f"ECG signal must have shape [T,12], got {signal.shape}")
     mean = signal.mean(axis=0, keepdims=True)
     std = signal.std(axis=0, keepdims=True) + 1e-8
     return (signal - mean) / std
+
+
+def _modality_config(model):
+    for modality in model.cfg.modalities:
+        if modality.name == "ecg":
+            return modality
+    raise ValueError("Checkpoint does not contain an 'ecg' modality")
+
+
+def _task_classes(data_root: str, task: str) -> list[str]:
+    """Load the split-independent PTB-XL class vocabulary for ``task``."""
+    if task == "superdiag":
+        return list(SUPERCLASSES)
+
+    root = Path(resolve_ptbxl_root(data_root))
+    statements_path = root / "scp_statements.csv"
+    if not statements_path.exists():
+        raise FileNotFoundError(
+            f"Cannot resolve PTB-XL classes for task={task!r}: missing {statements_path}"
+        )
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise ImportError("pip install pandas to infer non-superdiag PTB-XL tasks") from exc
+    scp = pd.read_csv(statements_path, index_col=0).to_dict("index")
+    return task_vocab(scp, task)
 
 
 @torch.no_grad()
@@ -42,6 +72,8 @@ def infer_signal(
     signal_path: str,
     device: torch.device,
     window_size: int | None = None,
+    task: str | None = None,
+    data_root: str = "./datasets",
 ) -> dict[str, float]:
     """Run inference on a single ECG signal.
 
@@ -50,6 +82,8 @@ def infer_signal(
     modality window_size if available).
     """
     sig = np.load(signal_path).astype(np.float32)
+    if sig.ndim != 2 or (sig.shape[0] != 12 and sig.shape[1] != 12):
+        raise ValueError(f"ECG signal must be [T,12] or [12,T], got {sig.shape} from {signal_path}")
     if sig.ndim == 2 and sig.shape[0] == 12:
         sig = sig.T  # [12, T] -> [T, 12]
 
@@ -61,14 +95,23 @@ def infer_signal(
 
     x = torch.from_numpy(sig).unsqueeze(0).to(device)  # [1, T, 12]
     out = model(x, modality="ecg")
-    probs = F.softmax(out["logits"], dim=-1)[0]
+    mcfg = _modality_config(model)
+    task = task or mcfg.task or "superdiag"
+    classes = _task_classes(data_root, task)
+    scores = torch.sigmoid(out["logits"]) if mcfg.multilabel else F.softmax(out["logits"], dim=-1)
+    scores = scores[0]
+    if len(classes) != scores.numel():
+        raise ValueError(
+            f"Checkpoint has {scores.numel()} ECG outputs, but task={task!r} has "
+            f"{len(classes)} classes. Pass the matching --ecg-task."
+        )
 
-    result = {cls: round(prob.item(), 6) for cls, prob in zip(CLASSES, probs)}
+    result = {cls: round(score.item(), 6) for cls, score in zip(classes, scores)}
     print(f"\nECG Signal: {signal_path}")
     print("-" * 45)
     for cls, prob in result.items():
         bar = "█" * int(prob * 30)
-        full = CLASS_FULL[cls]
+        full = CLASS_FULL.get(cls, cls)
         print(f"  {cls:6s} {full:28s} {prob * 100:5.1f}%  {bar}")
     return result
 
@@ -80,7 +123,7 @@ def eval_ptbxl(
     device: torch.device,
     batch_size: int = 128,
     window_size: int | None = None,
-    task: str = "superdiag",
+    task: str | None = None,
 ) -> dict[str, float]:
     """Evaluate the model on the PTB-XL test set.
 
@@ -90,8 +133,10 @@ def eval_ptbxl(
     """
     from engram.data.ecg import get_ecg_loaders
 
+    mcfg = _modality_config(model)
+    task = task or mcfg.task or "superdiag"
     root = resolve_ptbxl_root(data_root)
-    multilabel = task != "superdiag"
+    multilabel = mcfg.multilabel or task != "superdiag"
     if window_size is None:
         # Prefer the window_size stored in the checkpoint config.
         window_size = getattr(model.cfg.modalities[0], "window_size", 1000)
@@ -106,23 +151,29 @@ def eval_ptbxl(
         task=task,
     )
     num_classes = test_loader.dataset.num_classes
+    if num_classes != mcfg.num_classes:
+        raise ValueError(
+            f"Checkpoint expects {mcfg.num_classes} ECG classes, but task={task!r} "
+            f"provides {num_classes}. Pass the matching --ecg-task."
+        )
 
     if multilabel:
         auc = evaluate_multilabel_auc(model, test_loader, device, "ecg")
         print(f"\nPTB-XL Test macro-AUROC ({task}): {auc:.4f}")
         return {"macro_auc": auc}
 
-    auc = evaluate_macro_auc(model, test_loader, device, "ecg", num_classes)
-
     correct, total = 0, 0
     per_class_correct = [0] * num_classes
     per_class_total = [0] * num_classes
     total_loss = 0.0
+    all_logits, all_labels = [], []
 
     for x, labels in test_loader:
         x, labels = x.to(device), labels.to(device)
         out = model(x, modality="ecg", labels=labels)
         pred = out["logits"].argmax(dim=-1)
+        all_logits.append(out["logits"].float().cpu())
+        all_labels.append(labels.cpu())
 
         B = x.size(0)
         correct += (pred == labels).sum().item()
@@ -133,6 +184,8 @@ def eval_ptbxl(
             mask = labels == c
             per_class_correct[c] += (pred[mask] == labels[mask]).sum().item()
             per_class_total[c] += mask.sum().item()
+
+    auc = roc_auc_ovr_macro(torch.cat(all_logits), torch.cat(all_labels), num_classes)
 
     acc = correct / total if total > 0 else 0.0
     result = {
@@ -166,9 +219,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--ecg-task",
         type=str,
-        default="superdiag",
+        default=None,
         choices=["superdiag", "subdiag", "diag", "form", "rhythm", "all"],
-        help="PTB-XL task group for evaluation",
+        help="PTB-XL task group; defaults to the task stored in the checkpoint",
     )
     parser.add_argument(
         "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
@@ -181,7 +234,14 @@ def main(argv: list[str] | None = None) -> None:
 
     result = {}
     if args.signal:
-        result = infer_signal(model, args.signal, device, args.window_size)
+        result = infer_signal(
+            model,
+            args.signal,
+            device,
+            args.window_size,
+            task=args.ecg_task,
+            data_root=args.data_root,
+        )
     elif args.ptbxl_test:
         result = eval_ptbxl(
             model, args.data_root, device, args.batch_size, args.window_size, args.ecg_task

@@ -16,6 +16,8 @@ def binary_auroc(scores: torch.Tensor, positive: torch.Tensor) -> float | None:
     """
     scores = scores.detach().float().flatten()
     positive = positive.detach().bool().flatten()
+    if scores.numel() != positive.numel():
+        raise ValueError("scores and positive targets must have the same number of elements")
     n_pos = int(positive.sum())
     n_neg = int((~positive).sum())
     if n_pos == 0 or n_neg == 0:
@@ -42,6 +44,10 @@ def roc_auc_ovr_macro(logits: torch.Tensor, labels: torch.Tensor, num_classes: i
     logits: [N, C]; labels: [N] integer class ids. Averages per-class binary
     AUROC over classes that are present (non-degenerate).
     """
+    if logits.ndim != 2 or labels.ndim != 1 or logits.shape[0] != labels.shape[0]:
+        raise ValueError("logits must be [N,C] and labels must be [N]")
+    if num_classes <= 0 or num_classes > logits.shape[1]:
+        raise ValueError(f"num_classes must be in [1,{logits.shape[1]}], got {num_classes}")
     aucs = []
     for c in range(num_classes):
         auc = binary_auroc(logits[:, c], labels == c)
@@ -73,6 +79,14 @@ def bootstrap_auroc_ci(
     - single-label: scores are [N, C] logits/probs, targets are [N] class ids
       (set ``multilabel=False`` and pass ``num_classes``).
     """
+    if scores.ndim != 2 or targets.shape[0] != scores.shape[0]:
+        raise ValueError("scores must be [N,C] and targets must share the N dimension")
+    if scores.shape[0] == 0:
+        raise ValueError("cannot bootstrap AUROC on an empty dataset")
+    if n_resamples <= 0:
+        raise ValueError("n_resamples must be positive")
+    if not 0 < ci < 1:
+        raise ValueError("ci must be in (0, 1)")
     if multilabel is None:
         multilabel = targets.dim() == 2
 
@@ -91,6 +105,8 @@ def bootstrap_auroc_ci(
         if val == val:  # skip NaN (degenerate resample)
             samples.append(val)
     samples = sorted(samples)
+    if not samples:
+        return point, float("nan"), float("nan")
     lo_q = (1 - ci) / 2
     hi_q = 1 - lo_q
     lo = samples[max(0, int(lo_q * len(samples)))]
@@ -104,6 +120,8 @@ def multilabel_auroc_macro(scores: torch.Tensor, targets: torch.Tensor) -> float
     scores, targets: [N, C] with targets in {0,1}. This is the metric shape the
     full multi-label PTB-XL loader should feed (see EXPERIMENTS.md).
     """
+    if scores.ndim != 2 or targets.shape != scores.shape:
+        raise ValueError("scores and targets must both have shape [N,C]")
     aucs = []
     for c in range(scores.shape[1]):
         auc = binary_auroc(scores[:, c], targets[:, c])

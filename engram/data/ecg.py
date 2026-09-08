@@ -219,7 +219,8 @@ def get_ecg_loaders(
     task: str = "superdiag",
     normalize_eps: float = 1e-8,
     seed: int | None = None,
-) -> tuple[DataLoader, DataLoader, DataLoader]:
+    include_test: bool = True,
+) -> tuple[DataLoader, DataLoader, DataLoader | None]:
     kw = dict(
         window_size=window_size,
         multilabel=multilabel,
@@ -228,7 +229,7 @@ def get_ecg_loaders(
     )
     train = PTBXLDataset(root, "train", **kw)
     val = PTBXLDataset(root, "val", **kw)
-    test = PTBXLDataset(root, "test", **kw)
+    test = PTBXLDataset(root, "test", **kw) if include_test else None
 
     worker_init = functools.partial(_worker_init_fn, base_seed=seed) if seed is not None else None
     generator = torch.Generator().manual_seed(seed) if seed is not None else None
@@ -257,5 +258,7 @@ def get_ecg_loaders(
             num_workers=num_workers,
             worker_init_fn=worker_init,
             generator=generator,
-        ),
+        )
+        if test is not None
+        else None,
     )

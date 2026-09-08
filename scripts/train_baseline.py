@@ -32,6 +32,7 @@ def _loaders(args: argparse.Namespace):
             num_workers=args.num_workers,
             multilabel=ml,
             task=args.ecg_task,
+            include_test=False,
         )
         return train_loader, val_loader, 12, train_loader.dataset.num_classes, ml
     from engram.data.image import get_cifar_loaders
@@ -61,6 +62,8 @@ def train_epoch_baseline(model, loader, optimizer, device):
         total_loss += out["loss"].item() * b
         total_acc += accuracy(out["logits"], labels) * b
         n += b
+    if n == 0:
+        raise ValueError("train_epoch_baseline received an empty loader")
     return total_loss / n, total_acc / n
 
 
@@ -75,6 +78,8 @@ def evaluate_epoch_baseline(model, loader, device):
         total_loss += out["loss"].item() * b
         total_acc += accuracy(out["logits"], labels) * b
         n += b
+    if n == 0:
+        raise ValueError("evaluate_epoch_baseline received an empty loader")
     return total_loss / n, total_acc / n
 
 

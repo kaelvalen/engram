@@ -55,11 +55,12 @@ def train_epoch(
         optimizer.step()
 
         B = x.size(0)
-        total_loss += out["loss"].item() * B
+        loss_value = out["loss"].item()
+        total_loss += loss_value * B
         total_acc += accuracy(out["logits"], labels) * B
         n += B
         if loss_log_fn is not None:
-            loss_log_fn("train/loss_step", out["loss"].item(), step)
+            loss_log_fn("train/loss_step", loss_value, step)
 
     if n == 0:
         raise ValueError("train_epoch received an empty loader")
@@ -118,6 +119,8 @@ def evaluate_macro_auc(
             out = model(x, modality=modality)
         all_logits.append(out["logits"].float().cpu())
         all_labels.append(labels.cpu())
+    if not all_logits:
+        raise ValueError("evaluate_macro_auc received an empty loader")
     logits = torch.cat(all_logits)
     labels = torch.cat(all_labels)
     return roc_auc_ovr_macro(logits, labels, num_classes)
@@ -146,6 +149,8 @@ def evaluate_multilabel_auc(
             out = model(x, modality=modality)
         all_scores.append(torch.sigmoid(out["logits"].float()).cpu())
         all_targets.append(labels.cpu())
+    if not all_scores:
+        raise ValueError("evaluate_multilabel_auc received an empty loader")
     return multilabel_auroc_macro(torch.cat(all_scores), torch.cat(all_targets))
 
 

@@ -59,7 +59,7 @@ engram-infer-image = "scripts.infer_image:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engram*", "sgms*"]
+include = ["engram*", "sgms*", "scripts*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

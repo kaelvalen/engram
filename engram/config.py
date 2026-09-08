@@ -16,6 +16,9 @@ class ModalityConfig:
     # superclasses). Selects BCEWithLogits loss + multi-hot targets + macro AUROC
     # instead of softmax cross-entropy + argmax accuracy.
     multilabel: bool = False
+    # Dataset/task identifier used to make checkpointed inference unambiguous.
+    # Currently meaningful for ECG (e.g. "superdiag", "diag", or "all").
+    task: str | None = None
 
 
 @dataclass
@@ -92,21 +95,24 @@ class ENGRAMConfig:
     force_block_type: str | None = None
 
     def __post_init__(self):
-        assert self.hidden_dim % self.num_heads == 0, (
-            f"hidden_dim {self.hidden_dim} must be divisible by num_heads {self.num_heads}"
-        )
-        assert self.ssm_kind in ("ssd", "s4d_legacy"), (
-            f"ssm_kind must be 'ssd' or 's4d_legacy', got {self.ssm_kind!r}"
-        )
-        assert self.s4d_init in ("lin", "legacy"), (
-            f"s4d_init must be 'lin' or 'legacy', got {self.s4d_init!r}"
-        )
-        assert self.delta_backend in ("reference", "fla"), (
-            f"delta_backend must be 'reference' or 'fla', got {self.delta_backend!r}"
-        )
-        assert self.scan_backend in ("auto", "assoc", "reference"), (
-            f"scan_backend must be 'auto', 'assoc', or 'reference', got {self.scan_backend!r}"
-        )
+        if self.hidden_dim <= 0 or self.num_heads <= 0:
+            raise ValueError("hidden_dim and num_heads must be positive")
+        if self.hidden_dim % self.num_heads != 0:
+            raise ValueError(
+                f"hidden_dim {self.hidden_dim} must be divisible by num_heads {self.num_heads}"
+            )
+        if self.ssm_kind not in ("ssd", "s4d_legacy"):
+            raise ValueError(f"ssm_kind must be 'ssd' or 's4d_legacy', got {self.ssm_kind!r}")
+        if self.s4d_init not in ("lin", "legacy"):
+            raise ValueError(f"s4d_init must be 'lin' or 'legacy', got {self.s4d_init!r}")
+        if self.delta_backend not in ("reference", "fla"):
+            raise ValueError(
+                f"delta_backend must be 'reference' or 'fla', got {self.delta_backend!r}"
+            )
+        if self.scan_backend not in ("auto", "assoc", "reference"):
+            raise ValueError(
+                f"scan_backend must be 'auto', 'assoc', or 'reference', got {self.scan_backend!r}"
+            )
         # Positive dimensional hyperparameters.
         for name in (
             "hidden_dim",
@@ -176,6 +182,8 @@ class ENGRAMConfig:
                 )
         if self.pool_type not in ("mean", "last"):
             raise ValueError(f"pool_type must be 'mean' or 'last', got {self.pool_type!r}")
+        if "swa" in self.layer_pattern() and self.head_dim % 2:
+            raise ValueError("SWA layers require an even per-head dimension for RoPE")
 
     @property
     def head_dim(self) -> int:

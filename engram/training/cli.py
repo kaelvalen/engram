@@ -81,17 +81,19 @@ def _build_loaders_single(
     elif modality == "ecg":
         from engram.data.ecg import get_ecg_loaders
 
+        ecg_task = args.ecg_task or "superdiag"
         ecg_root = resolve_ptbxl_root(args.data_root)
         # Any task other than legacy super-diagnostic is inherently multi-label.
-        ml = args.ecg_multilabel or args.ecg_task != "superdiag"
+        ml = args.ecg_multilabel or ecg_task != "superdiag"
         train_loader, val_loader, _test = get_ecg_loaders(
             root=ecg_root,
             batch_size=args.batch_size,
             window_size=args.window_size,
             num_workers=args.num_workers,
             multilabel=ml,
-            task=args.ecg_task,
+            task=ecg_task,
             seed=args.seed,
+            include_test=False,
         )
         # num_classes is task-dependent (5 for super-diag, more for diag/subdiag/…);
         # read it from the loaded vocabulary rather than hardcoding.
@@ -103,6 +105,7 @@ def _build_loaders_single(
                 num_classes=num_classes,
                 window_size=args.window_size,
                 multilabel=ml,
+                task=ecg_task,
             )
         ]
     else:
@@ -154,9 +157,16 @@ def _build_loaders_joint(
         batch_size=args.batch_size,
         window_size=args.window_size,
         num_workers=args.num_workers,
+        include_test=False,
     )
     modalities = [
-        ModalityConfig(name="ecg", input_dim=12, num_classes=5, window_size=args.window_size),
+        ModalityConfig(
+            name="ecg",
+            input_dim=12,
+            num_classes=5,
+            window_size=args.window_size,
+            task="superdiag",
+        ),
         ModalityConfig(name="image", input_dim=input_dim, num_classes=10, patch_size=patch_size),
     ]
     cfg = ENGRAMConfig(modalities=modalities, **_cfg_kwargs(args))
@@ -540,11 +550,12 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     logger.info(
-        "ENGRAM — %s | params: %s | device: %s | block_pattern=%s",
+        "ENGRAM — %s | params: %s | device: %s | block_pattern=%s | ssm_kind=%s",
         modality.upper(),
         f"{sum(p.numel() for p in model.parameters()):,}",
         device,
         args.block_pattern,
+        args.ssm_kind,
     )
 
     trainer.fit(
