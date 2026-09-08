@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -16,8 +17,10 @@ class SABERState:
     diagnostic histories (budget / InfoNCE running means)."""
 
     policy_hidden: torch.Tensor  # [num_layers, B, policy_state_dim]
-    budget_history: list[float] = field(default_factory=list)
-    infonce_loss_history: list[float] = field(default_factory=list)
+    # Keep scalar history on the active device.  Converting each value to a
+    # Python float in forward would synchronize CUDA once per batch.
+    budget_history: list[torch.Tensor] = field(default_factory=list)
+    infonce_loss_history: list[torch.Tensor] = field(default_factory=list)
 
 
 class LatentEncoder(nn.Module):
@@ -146,6 +149,7 @@ class SparseMemoryActivation(nn.Module):
         self.num_slots = cfg.num_memory_slots
         self.slot_dim = cfg.memory_slot_dim
         self.temperature = cfg.topk_temperature
+        self.max_budget = min(self.num_slots, cfg.budget_max)
 
         self.slot_embeddings = nn.Parameter(torch.randn(self.num_slots, self.slot_dim) * 0.02)
         self.query_proj = nn.Linear(cfg.policy_state_dim, self.slot_dim)
@@ -156,14 +160,19 @@ class SparseMemoryActivation(nn.Module):
         q = self.query_proj(x)
         scores = torch.matmul(q, self.slot_embeddings.t()) / self.temperature  # [B,T,M]
         M = self.num_slots
-        k = budget.round().long().clamp(min=1, max=M)  # [B,T]
-
-        sorted_scores, idx = scores.sort(dim=-1, descending=True)
-        ranks = torch.arange(M, device=x.device).view(1, 1, M)
+        k = budget.round().long().clamp(min=1, max=self.max_budget)  # [B,T]
+        # There is no need to sort or gather all M slots: AdaptiveBudget
+        # guarantees that at most budget_max slots can be active.
+        k_max = max(1, min(M, math.ceil(self.max_budget)))
+        sorted_scores, idx = scores.topk(k_max, dim=-1)
+        ranks = torch.arange(k_max, device=x.device).view(1, 1, k_max)
         selected = ranks < k.unsqueeze(-1)
-        weights = F.softmax(sorted_scores.masked_fill(~selected, float("-inf")), dim=-1)
+        top_weights = F.softmax(sorted_scores.masked_fill(~selected, float("-inf")), dim=-1)
         slots = self.slot_embeddings[idx]  # [B,T,M,slot_dim]
-        readout = (weights.unsqueeze(-1) * slots).sum(dim=2)
+        readout = (top_weights.unsqueeze(-1) * slots).sum(dim=2)
+        # Preserve the public full-slot diagnostic tensor without paying for
+        # full-slot sorting/gathering in the hot path.
+        weights = torch.zeros_like(scores).scatter(-1, idx, top_weights)
         return readout, weights
 
 
@@ -175,8 +184,8 @@ class AdaptiveBudget(nn.Module):
         self.max_budget = cfg.budget_max
 
     def forward(self, surprise: torch.Tensor) -> torch.Tensor:
-        budget = self.floor + self.alpha * surprise.clamp(0, self.max_budget)
-        return budget.clamp(self.floor, self.floor + self.alpha * self.max_budget)
+        budget = self.floor + self.alpha * surprise.clamp_min(0)
+        return budget.clamp(self.floor, self.max_budget)
 
 
 class SABER(nn.Module):
@@ -204,6 +213,8 @@ class SABER(nn.Module):
         self, x: torch.Tensor, state: Optional[SABERState] = None
     ) -> tuple[SABERState, dict]:
         """x: [B, T, input_dim]. Returns (new_state, aux)."""
+        if x.ndim != 3 or x.shape[1] == 0 or x.shape[2] != self.input_dim:
+            raise ValueError(f"SABER expects [B,T,{self.input_dim}] with T>0, got {tuple(x.shape)}")
         B, T, _ = x.shape
 
         z = self.encoder(x)  # [B,T,D]
@@ -222,13 +233,13 @@ class SABER(nn.Module):
         predictor_loss = F.mse_loss(pred_online, z.detach())
 
         if self.training:
-            self._anneal_beta(int(self.step))
+            self._anneal_beta()
             self.step.add_(1)
 
         budget_history = list(state.budget_history) if state is not None else []
         infonce_history = list(state.infonce_loss_history) if state is not None else []
-        budget_history.append(float(budget.mean().detach()))
-        infonce_history.append(float(infonce_loss.detach()))
+        budget_history.append(budget.mean().detach())
+        infonce_history.append(infonce_loss.detach())
 
         new_state = SABERState(
             policy_hidden=new_hidden.detach(),
@@ -255,22 +266,43 @@ class SABER(nn.Module):
     def _compute_infonce(self, s_t: torch.Tensor, z_t: torch.Tensor) -> torch.Tensor:
         """In-batch contrastive loss between time-averaged policy projections
         and encoder latents: logits[i, j] = ⟨proj(s_i), z_j⟩ / τ, target = i
-        (all other batch elements act as negatives; no self-collision)."""
+        (all other batch elements act as negatives; no self-collision).  For
+        batches larger than the configured negative budget, sample negatives
+        without constructing a quadratic [B,B] matrix."""
         proj_s = self.policy.get_projection(s_t).mean(dim=1)  # [B,D]
         z_pooled = z_t.mean(dim=1)  # [B,D]
-        logits = (proj_s @ z_pooled.t()) / self.cfg.infonce_temperature  # [B,B]
-        labels = torch.arange(logits.shape[0], device=logits.device)
+        B = proj_s.shape[0]
+        n_neg = min(self.cfg.infonce_num_negatives, max(0, B - 1))
+        positive = (proj_s * z_pooled).sum(dim=-1, keepdim=True)
+        if n_neg == B - 1:
+            logits = proj_s @ z_pooled.t()
+            labels = torch.arange(B, device=logits.device)
+        else:
+            # Shift sampled indices at/after the row index so self is never a
+            # negative.  Duplicate negatives are harmless and avoid a Python
+            # loop or an O(B^2) permutation tensor.
+            row = torch.arange(B, device=proj_s.device).unsqueeze(1)
+            neg = torch.randint(B, (B, n_neg), device=proj_s.device)
+            neg = neg + (neg >= row).long()
+            negative = (proj_s.unsqueeze(1) * z_pooled[neg]).sum(dim=-1)
+            logits = torch.cat([positive, negative], dim=1)
+            labels = torch.zeros(B, dtype=torch.long, device=logits.device)
+        logits = logits / self.cfg.infonce_temperature
         return F.cross_entropy(logits, labels)
 
-    def _anneal_beta(self, step: int):
-        if step < self.cfg.infonce_beta_anneal_steps:
-            progress = step / self.cfg.infonce_beta_anneal_steps
-            new_beta = (
-                self.cfg.infonce_beta_start * (1 - progress) + self.cfg.infonce_beta_end * progress
-            )
-        else:
-            new_beta = self.cfg.infonce_beta_end
-        self.beta.data = torch.tensor(new_beta)
+    def _anneal_beta(self):
+        # Keep the schedule on-device.  `int(self.step)` would synchronize a
+        # CUDA scalar on every forward, which is particularly costly for
+        # short streaming chunks.
+        if self.cfg.infonce_beta_anneal_steps == 0:
+            self.beta.copy_(self.beta.new_tensor(self.cfg.infonce_beta_end))
+            return
+        step = self.step.to(dtype=self.beta.dtype)
+        total = self.beta.new_tensor(float(self.cfg.infonce_beta_anneal_steps))
+        progress = (step / total).clamp(max=1.0)
+        new_beta = self.beta.new_tensor(self.cfg.infonce_beta_start) * (1 - progress)
+        new_beta = new_beta + self.beta.new_tensor(self.cfg.infonce_beta_end) * progress
+        self.beta.copy_(new_beta)
 
     def get_param_groups(self) -> list[dict]:
         """Two-timescale groups + memory. Guaranteed disjoint and covering."""

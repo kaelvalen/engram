@@ -148,7 +148,8 @@ class SABERRecovery:
             noise = torch.randn_like(self.saber.predictor.ema_weight) * 0.1
             self.saber.predictor.ema_weight.add_(noise)
 
-        self.cfg.budget_floor = int(self.cfg.budget_floor * 1.2)
+        self.cfg.budget_floor = min(int(self.cfg.budget_floor * 1.2), self.cfg.budget_max)
+        self.saber.budget.floor = self.cfg.budget_floor
 
     def _recover_r2(self):
         self.saber.memory.slot_embeddings.grad = None
@@ -161,6 +162,7 @@ class SABERRecovery:
     def _recover_r4(self):
         self.cfg.infonce_beta_end *= 0.5
         self.cfg.budget_alpha *= 1.25
+        self.saber.budget.alpha = self.cfg.budget_alpha
 
         with torch.no_grad():
             noise = torch.randn_like(self.saber.encoder.net[-1].weight) * 0.01
@@ -175,8 +177,7 @@ class SABERRecovery:
                     nn.init.normal_(p, mean=0.0, std=0.02)
                 else:
                     nn.init.zeros_(p)
-        self.cfg.policy_state_dim = min(self.cfg.policy_state_dim, 64)
-        self.saber.beta.data = torch.tensor(self.cfg.infonce_beta_start)
+        self.saber.beta.copy_(self.saber.beta.new_tensor(self.cfg.infonce_beta_start))
 
 
 class SABERTrainer:

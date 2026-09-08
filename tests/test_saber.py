@@ -90,7 +90,7 @@ def test_budget_within_bounds_and_surprise_nonnegative():
     _, aux = s(torch.randn(2, 9, 12))
     assert (aux["surprise"] >= 0).all()
     lo = cfg.budget_floor
-    hi = cfg.budget_floor + cfg.budget_alpha * cfg.budget_max
+    hi = cfg.budget_max
     assert (aux["budget"] >= lo).all() and (aux["budget"] <= hi).all()
 
 

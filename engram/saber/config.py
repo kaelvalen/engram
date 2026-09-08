@@ -74,11 +74,54 @@ class SABERConfig:
     log_every: int = 100
 
     def __post_init__(self):
-        assert self.policy_state_dim <= 64, "Policy state dim must be <= 64"
-        assert self.budget_floor >= 1
-        assert self.budget_max >= self.budget_floor
-        assert self.num_memory_slots >= self.budget_max
-        assert 0 < self.predictor_ema_decay < 1
-        assert 0 < self.surprise_mu_lambda < 1
-        assert 0 < self.surprise_sigma_lambda < 1
-        assert self.infonce_beta_start <= self.infonce_beta_end
+        positive_ints = (
+            "encoder_hidden_dim",
+            "encoder_num_layers",
+            "policy_state_dim",
+            "policy_num_layers",
+            "infonce_num_negatives",
+            "predictor_max_steps",
+            "budget_floor",
+            "budget_max",
+            "num_memory_slots",
+            "memory_slot_dim",
+            "phase1_steps",
+            "phase2_steps",
+            "phase3_steps",
+            "log_every",
+        )
+        for name in positive_ints:
+            value = getattr(self, name)
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+        if self.policy_state_dim > 64:
+            raise ValueError("policy_state_dim must be <= 64")
+        if (
+            not isinstance(self.infonce_beta_anneal_steps, int)
+            or self.infonce_beta_anneal_steps < 0
+        ):
+            raise ValueError("infonce_beta_anneal_steps must be a non-negative integer")
+        if self.budget_max < self.budget_floor:
+            raise ValueError("budget_max must be >= budget_floor")
+        if self.num_memory_slots < self.budget_max:
+            raise ValueError("num_memory_slots must be >= budget_max")
+        for name in ("encoder_dropout", "policy_dropout"):
+            value = getattr(self, name)
+            if not 0.0 <= value < 1.0:
+                raise ValueError(f"{name} must be in [0, 1), got {value}")
+        if self.infonce_temperature <= 0 or self.topk_temperature <= 0:
+            raise ValueError("InfoNCE and top-k temperatures must be positive")
+        if not 0 < self.predictor_ema_decay < 1:
+            raise ValueError("predictor_ema_decay must be in (0, 1)")
+        if not 0 < self.surprise_mu_lambda < 1:
+            raise ValueError("surprise_mu_lambda must be in (0, 1)")
+        if not 0 < self.surprise_sigma_lambda < 1:
+            raise ValueError("surprise_sigma_lambda must be in (0, 1)")
+        if self.infonce_beta_start < 0 or self.infonce_beta_start > self.infonce_beta_end:
+            raise ValueError("InfoNCE beta values must be non-negative and non-decreasing")
+        if self.surprise_eps_min <= 0 or self.surprise_eps_scale < 0 or self.surprise_max <= 0:
+            raise ValueError("surprise eps/max settings must be positive")
+        if self.budget_alpha < 0 or self.topk_temperature <= 0:
+            raise ValueError("budget_alpha must be non-negative")
+        if self.lr_fast <= 0 or self.lr_slow <= 0 or self.lr_memory <= 0:
+            raise ValueError("learning rates must be positive")
