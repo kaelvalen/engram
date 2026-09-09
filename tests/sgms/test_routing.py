@@ -247,12 +247,14 @@ def test_topk_mask_scatter():
 def test_mask_idempotent():
     idx = torch.randint(0, 3, (2, 8, 1))
     m = topk_mask(idx, 3)
-    assert torch.equal(m * m, m)
+    assert torch.equal(m & m, m)
 
 
-def test_mask_dtype_float():
+def test_mask_dtype_bool():
     m = topk_mask(torch.zeros(1, 1, 1, dtype=torch.long), 2)
-    assert m.dtype == torch.float32
+    assert m.dtype == torch.bool
+    m_f = topk_mask(torch.zeros(1, 1, 1, dtype=torch.long), 2, dtype=torch.float32)
+    assert m_f.dtype == torch.float32
 
 
 def test_routing_output_shapes_contract():

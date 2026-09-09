@@ -9,16 +9,19 @@ from __future__ import annotations
 import torch
 
 
-def topk_mask(indices: torch.Tensor, num_experts: int) -> torch.Tensor:
-    """Float {0,1} mask [B, T, K] from top-k expert indices [B, T, k].
+def topk_mask(
+    indices: torch.Tensor, num_experts: int, dtype: torch.dtype = torch.bool
+) -> torch.Tensor:
+    """Mask [B, T, K] from top-k expert indices [B, T, k].
 
-    Idempotent by construction (entries are exactly 0 or 1).
+    Defaults to torch.bool for a 4x smaller memory footprint than float32.
     """
     if indices.dtype != torch.long:
         raise TypeError(f"indices must be long, got {indices.dtype}")
     B, T, _ = indices.shape
-    mask = torch.zeros(B, T, num_experts, dtype=torch.float32, device=indices.device)
-    mask.scatter_(-1, indices, 1.0)
+    mask = torch.zeros(B, T, num_experts, dtype=dtype, device=indices.device)
+    val = True if dtype == torch.bool else 1.0
+    mask.scatter_(-1, indices, val)
     return mask
 
 

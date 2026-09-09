@@ -104,9 +104,10 @@ class SGMSBlock(nn.Module):
         # exclusion applies to the learned top-k only).
         if drop_idx is not None and self.cfg.router_mode != "learned":
             keep = torch.ones_like(routing.mask)
-            keep[..., list(drop_idx)] = 0.0
-            mask = routing.mask * keep
-            gates = routing.gates * keep
+            keep[..., list(drop_idx)] = False if routing.mask.dtype == torch.bool else 0.0
+            mask = routing.mask & keep if routing.mask.dtype == torch.bool else routing.mask * keep
+            keep_f = keep.float()
+            gates = routing.gates * keep_f
             gates = gates / gates.sum(-1, keepdim=True).clamp_min(1e-12)
             routing = RoutingOutput(gates, mask, routing.indices, routing.logits, routing.probs)
 
