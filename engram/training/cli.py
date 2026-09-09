@@ -44,6 +44,9 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
         swa_window=args.swa_window,
         compile=args.compile,
         gradient_checkpointing=args.gradient_checkpointing,
+        conv_kernel_size=args.conv_kernel_size,
+        ffn_expand=args.ffn_expand,
+        pool_type=args.pool_type,
     )
     layer_pattern = getattr(args, "layer_pattern", None)
     if layer_pattern:
@@ -393,6 +396,25 @@ def main(argv: list[str] | None = None) -> None:
         "--gradient-checkpointing",
         action="store_true",
         help="Recompute layer activations during backward to save VRAM (slower epochs).",
+    )
+    parser.add_argument(
+        "--conv-kernel-size",
+        type=int,
+        default=4,
+        help="Short causal conv kernel size. 0 = bypass conv (ablation).",
+    )
+    parser.add_argument(
+        "--ffn-expand",
+        type=int,
+        default=2,
+        help="SwiGLU FFN expansion factor. 0 = bypass FFN (ablation).",
+    )
+    parser.add_argument(
+        "--pool-type",
+        type=str,
+        default="mean",
+        choices=["mean", "last"],
+        help="Pooling strategy: 'mean' (mean over T) or 'last' (last token).",
     )
     parser.add_argument(
         "--data-root",

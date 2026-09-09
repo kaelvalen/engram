@@ -9,7 +9,10 @@ import torch.nn as nn
 from engram.layer_tokens import LAYER_TOKENS
 
 from .attention import SWABlock, SWAState
+from .conv import ShortCausalConv1d
 from .delta import DeltaBlock, DeltaState
+from .ffn import SwiGLU
+from .norm import RMSNorm
 from .s4 import S4Block
 from .ssd import SSDBlock
 
@@ -121,31 +124,124 @@ def register_block(
     return _register
 
 
+def _maybe_conv(hidden_dim: int, kernel_size: int):
+    """Return a conv module or None (ablation bypass) when kernel_size <= 0."""
+    if kernel_size <= 0:
+        return None
+    return ShortCausalConv1d(hidden_dim, kernel_size)
+
+
+def _maybe_ffn(hidden_dim: int, expand: int, dropout: float = 0.0):
+    """Return (norm, ffn, dropout) or None when expand <= 0 (ablation bypass)."""
+    if expand <= 0:
+        return None, None, None
+    return (
+        RMSNorm(hidden_dim),
+        SwiGLU(hidden_dim, expand),
+        nn.Dropout(dropout) if dropout > 0.0 else nn.Identity(),
+    )
+
+
+class _AblationBlockWrapper(nn.Module):
+    """Wraps a standard block to support conv/FFN bypass for component ablation.
+
+    When conv_kernel_size=0 or ffn_expand=0 in the config, the corresponding
+    component is removed from the block. This wrapper replaces the original
+    block's conv/FFN with identity operations by intercepting the forward.
+    """
+
+    def __init__(self, inner: nn.Module, skip_conv: bool, skip_ffn: bool):
+        super().__init__()
+        self.inner = inner
+        self.skip_conv = skip_conv
+        self.skip_ffn = skip_ffn
+
+        if skip_conv and hasattr(inner, "conv"):
+            # Replace conv with identity-like passthrough
+            inner.conv = None  # type: ignore[assignment]
+
+        if skip_ffn:
+            if hasattr(inner, "ffn"):
+                inner.ffn = None  # type: ignore[assignment]
+            if hasattr(inner, "norm2"):
+                inner.norm2 = None  # type: ignore[assignment]
+            if hasattr(inner, "ffn_dropout"):
+                inner.ffn_dropout = None  # type: ignore[assignment]
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        conv_state: torch.Tensor | None = None,
+        mixer_state=None,
+    ):
+        r = x
+        x_n = self.inner.norm1(x)
+
+        # Conv or bypass
+        if self.skip_conv:
+            x_c = x_n
+            new_conv_state = None
+        else:
+            x_c, new_conv_state = self.inner.conv(x_n, conv_state)
+
+        # Mixer (SSM / Delta / etc.)
+        if hasattr(self.inner, "ssm"):
+            x_m, new_mixer_state = self.inner.ssm(x_c, mixer_state)
+        elif hasattr(self.inner, "delta"):
+            x_m, new_mixer_state = self.inner.delta(x_c, mixer_state)
+        else:
+            raise AttributeError("Block has no recognized mixer (ssm/delta)")
+
+        drop = getattr(self.inner, "dropout", nn.Identity())
+        x = r + drop(x_m)
+
+        # FFN or bypass
+        if not self.skip_ffn and self.inner.norm2 is not None:
+            ffn_drop = getattr(self.inner, "ffn_dropout", nn.Identity())
+            x = x + ffn_drop(self.inner.ffn(self.inner.norm2(x)))
+
+        return x, new_conv_state, new_mixer_state
+
+
+def _wrap_if_needed(block: nn.Module, cfg: ENGRAMConfig) -> nn.Module:
+    """Wrap a block with ablation bypass if conv or FFN are disabled."""
+    skip_conv = cfg.conv_kernel_size <= 0
+    skip_ffn = cfg.ffn_expand <= 0
+    if skip_conv or skip_ffn:
+        return _AblationBlockWrapper(block, skip_conv, skip_ffn)
+    return block
+
+
 def _build_s4_block(cfg: ENGRAMConfig) -> nn.Module:
     """Resolve the ``s4`` role to SSD or S4D based on ``cfg.ssm_kind``."""
+    # Use kernel_size >= 1 for the actual block; ablation wrapping handles bypass.
+    conv_ks = max(cfg.conv_kernel_size, 1)
+    ffn_exp = max(cfg.ffn_expand, 1)
     common = dict(
         hidden_dim=cfg.hidden_dim,
         num_heads=cfg.num_heads,
-        conv_kernel_size=cfg.conv_kernel_size,
-        ffn_expand=cfg.ffn_expand,
+        conv_kernel_size=conv_ks,
+        ffn_expand=ffn_exp,
         dropout=cfg.dropout,
     )
     if cfg.ssm_kind == "ssd":
-        return SSDBlock(
+        block = SSDBlock(
             **common,
             state_dim=cfg.ssd_state_dim,
             dt_min=cfg.s4_dt_min,
             dt_max=cfg.s4_dt_max,
             scan_backend=cfg.scan_backend,
         )
-    return S4Block(
-        **common,
-        state_mult=cfg.s4_state_mult,
-        dt_min=cfg.s4_dt_min,
-        dt_max=cfg.s4_dt_max,
-        init=cfg.s4d_init,
-        scan_backend=cfg.scan_backend,
-    )
+    else:
+        block = S4Block(
+            **common,
+            state_mult=cfg.s4_state_mult,
+            dt_min=cfg.s4_dt_min,
+            dt_max=cfg.s4_dt_max,
+            init=cfg.s4d_init,
+            scan_backend=cfg.scan_backend,
+        )
+    return _wrap_if_needed(block, cfg)
 
 
 @register_block("s4")
@@ -155,17 +251,20 @@ def _build_s4(cfg: ENGRAMConfig) -> nn.Module:
 
 @register_block("delta")
 def _build_delta(cfg: ENGRAMConfig) -> nn.Module:
-    return DeltaBlock(
+    conv_ks = max(cfg.conv_kernel_size, 1)
+    ffn_exp = max(cfg.ffn_expand, 1)
+    block = DeltaBlock(
         hidden_dim=cfg.hidden_dim,
         num_heads=cfg.num_heads,
         qk_norm=cfg.qk_norm,
         chunk_size=cfg.delta_chunk_size,
         gate_bias_init=cfg.gate_bias_init,
-        conv_kernel_size=cfg.conv_kernel_size,
-        ffn_expand=cfg.ffn_expand,
+        conv_kernel_size=conv_ks,
+        ffn_expand=ffn_exp,
         backend=cfg.delta_backend,
         dropout=cfg.dropout,
     )
+    return _wrap_if_needed(block, cfg)
 
 
 @register_block("swa")
@@ -174,7 +273,7 @@ def _build_swa(cfg: ENGRAMConfig) -> nn.Module:
         hidden_dim=cfg.hidden_dim,
         num_heads=cfg.num_heads,
         window=cfg.swa_window,
-        ffn_expand=cfg.ffn_expand,
+        ffn_expand=max(cfg.ffn_expand, 1),
         dropout=cfg.dropout,
     )
 

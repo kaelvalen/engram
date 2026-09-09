@@ -9,7 +9,7 @@ import time
 
 import torch
 import torch.nn as nn
-from engram.baselines import ResNet1DClassifier, TransformerSequenceClassifier
+from engram.baselines import AudioCNNClassifier, ResNet1DClassifier, TransformerSequenceClassifier
 from engram.data.paths import resolve_ptbxl_root
 from engram.training.loops import accuracy, evaluate_macro_auc, evaluate_multilabel_auc
 from engram.training.utils import set_seed
@@ -35,6 +35,18 @@ def _loaders(args: argparse.Namespace):
             include_test=False,
         )
         return train_loader, val_loader, 12, train_loader.dataset.num_classes, ml
+    if args.task == "audio":
+        from engram.data.audio import get_audio_loaders
+
+        train_loader, val_loader = get_audio_loaders(
+            root=os.path.join(args.data_root, "audio"),
+            batch_size=args.batch_size,
+            num_mel_bins=getattr(args, "mel_bins", 64),
+            patch_frames=getattr(args, "patch_frames", 4),
+            num_workers=args.num_workers,
+            synthetic=False,
+        )
+        return train_loader, val_loader, getattr(args, "mel_bins", 64), 10, False
     from engram.data.image import get_cifar_loaders
 
     patch_size = args.patch_size
@@ -94,8 +106,8 @@ def evaluate_baseline_auc(model, loader, device, multilabel: bool):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["resnet1d", "transformer"], default="resnet1d")
-    parser.add_argument("--task", choices=["ecg", "image"], default="image")
+    parser.add_argument("--model", choices=["resnet1d", "transformer", "audio_cnn"], default="resnet1d")
+    parser.add_argument("--task", choices=["ecg", "image", "audio"], default="image")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-4)
@@ -144,6 +156,11 @@ def main() -> None:
             print("resnet1d is intended for ECG [B,T,C]. Use --task ecg.", file=sys.stderr)
             sys.exit(1)
         model = ResNet1DClassifier(in_channels=in_dim, num_classes=n_cls).to(device)
+    elif args.model == "audio_cnn":
+        if args.task != "audio":
+            print("audio_cnn is intended for audio. Use --task audio.", file=sys.stderr)
+            sys.exit(1)
+        model = AudioCNNClassifier(input_dim=in_dim, num_classes=n_cls).to(device)
     else:
         model = TransformerSequenceClassifier(
             input_dim=in_dim, num_classes=n_cls, d_model=256, num_layers=4

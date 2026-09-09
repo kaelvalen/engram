@@ -113,7 +113,7 @@ class ENGRAMConfig:
             raise ValueError(
                 f"scan_backend must be 'auto', 'assoc', or 'reference', got {self.scan_backend!r}"
             )
-        # Positive dimensional hyperparameters.
+        # Always-positive dimensional hyperparameters.
         for name in (
             "hidden_dim",
             "num_heads",
@@ -121,13 +121,16 @@ class ENGRAMConfig:
             "s4_state_mult",
             "ssd_state_dim",
             "delta_chunk_size",
-            "conv_kernel_size",
-            "ffn_expand",
             "swa_window",
         ):
             val = getattr(self, name)
             if not isinstance(val, int) or val <= 0:
                 raise ValueError(f"{name} must be a positive integer, got {val!r}")
+        # Conv and FFN may be zero for component ablation (bypass).
+        for name in ("conv_kernel_size", "ffn_expand"):
+            val = getattr(self, name)
+            if not isinstance(val, int) or val < 0:
+                raise ValueError(f"{name} must be a non-negative integer, got {val!r}")
         if not (0 < self.s4_dt_min < self.s4_dt_max):
             raise ValueError(
                 f"s4_dt_min must be positive and less than s4_dt_max, "

@@ -159,18 +159,38 @@ uses three seeds; vision and audio use Seed 0 at 10 epochs. Because the metrics
 are modality-specific, they are not directly comparable as one cross-modal
 ranking.
 
+**⚠ Statistical caveat (2026-09-09):** With only 3 seeds, the minimum detectable
+effect (MDE) at α=0.05 / power=0.80 is ~0.003–0.008 AUROC. Most observed
+inter-architecture differences are *smaller* than the MDE — they are within
+measurement noise. The `scripts/statistical_analysis.py` report confirms that
+no pairwise ENGRAM variant difference is statistically significant after
+Holm-Bonferroni correction. **Increasing to ≥10 seeds is required before any
+"A beats B" claim.** Use `scripts/run_full_validation.sh` for the 10-seed run.
+
 ### ECG — PTB-XL test set, macro AUROC
 
-| Architecture / model | Parameters | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
-|---|---:|---:|---:|---:|---:|
-| `engram_hybrid_ecg` | ~258k | 0.8909 | 0.8953 | 0.8925 | **0.8929 ± 0.0022** |
-| `engram_legacy_ecg` | ~174k | 0.8899 | 0.8910 | 0.8925 | **0.8911 ± 0.0013** |
-| `gatedelta_only_ecg` | ~185k | 0.8894 | 0.8910 | 0.8919 | **0.8908 ± 0.0013** |
-| `mamba2_only_ecg` | ~282k | 0.8866 | 0.8961 | 0.8895 | **0.8907 ± 0.0048** |
+| Architecture / model | Parameters | AUROC/100k | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
+|---|---:|---:|---:|---:|---:|---:|
+| `engram_hybrid_ecg` | ~258k | 0.346 | 0.8909 | 0.8953 | 0.8925 | 0.8929 ± 0.0022 |
+| `engram_legacy_ecg` | ~174k | 0.512 | 0.8899 | 0.8910 | 0.8925 | 0.8911 ± 0.0013 |
+| `gatedelta_only_ecg` | ~185k | 0.481 | 0.8894 | 0.8910 | 0.8919 | 0.8908 ± 0.0013 |
+| `mamba2_only_ecg` | ~282k | 0.316 | 0.8866 | 0.8961 | 0.8895 | 0.8907 ± 0.0048 |
 
-`engram_hybrid_ecg` leads by mean Macro AUROC and remains more stable across
-seeds than `mamba2_only_ecg`. The Mamba-2-only model reaches the highest single
-seed score (0.8961) but has the largest seed variance.
+**Honest interpretation:** All four ENGRAM variants are **statistically
+indistinguishable** at 3 seeds (p > 0.7 for all pairwise tests, Cohen's d <
+0.25, effect sizes negligible). The hybrid has a marginally higher mean and
+lower variance, but this is not evidence of superiority — it is consistent with
+random seed variation.
+
+**Parameter efficiency:** The `engram_legacy` achieves the same AUROC with 48%
+fewer parameters than the hybrid (174k vs 258k, AUROC/100k: 0.512 vs 0.346).
+If parameter efficiency matters, legacy is more efficient. The `mamba2_only` is
+the least parameter-efficient ENGRAM variant (282k params, 0.316 AUROC/100k).
+
+**Baseline context (from val table):** ResNet1D (~127k params) reaches 0.9024 ±
+0.0008 val macro-AUROC — *numerically higher* than all ENGRAM variants, with far
+fewer parameters and the most stable seed behavior. The only statistically
+significant finding (after Holm-Bonferroni) is that ResNet1D > Transformer.
 
 ### Vision — CIFAR-10 test set, accuracy
 
@@ -185,8 +205,15 @@ seed score (0.8961) but has the largest seed variance.
 | Deer | 68.50% | Dog | 65.30% |
 | Bird | 55.90% | Cat | 52.30% |
 
-Automobile, Ship, and Truck are the strongest classes. Cat and Bird are the
-weakest classes in this run.
+**Honest interpretation:** 72.38% at 10 epochs is **below typical baselines**.
+A ResNet-18 on CIFAR-10 reaches ~80%+ at 10 epochs; even simple CNNs reach ~75%.
+This result demonstrates the pipeline works end-to-end but does not support a
+"competitive on vision" claim. The Cat/Bird weakness (52–56%) is a standard
+fine-grained confusion pattern (cat↔dog, bird↔airplane), not architecture-specific.
+
+**Missing:** No vision baseline is included in this run (TODO: add ResNet-18
+equivalent or at minimum cite standard reference numbers). Single-seed results
+cannot support claims.
 
 ### Audio — Speech Commands v2 test set
 
@@ -194,6 +221,33 @@ weakest classes in this run.
 
 - **Test accuracy:** **92.07%** (3,751 / 4,074)
 - **Test cross-entropy loss:** **0.3752**
+
+**Honest interpretation:** 92.07% is a reasonable score, but not evidence of
+architectural advantage. Simple 1D CNNs (M5-Net) achieve ~90%+ on Speech
+Commands v2, and attention-based models reach ~95%+. Without a baseline in the
+same training setup (same epochs, batch size, data augmentation), we cannot
+attribute this score to the ENGRAM architecture. An `AudioCNNClassifier`
+baseline is now available via `scripts/train_baseline.py --model audio_cnn
+--task audio`.
+
+**Missing:** Baseline comparison, multi-seed evaluation (TODO: 5 seeds via
+`scripts/run_full_validation.sh`).
+
+### What the scorecard shows vs what it doesn't
+
+**Shows:**
+- The ENGRAM backbone pipeline works end-to-end across three modalities
+- All four ENGRAM variants (hybrid, SSD-only, delta-only, legacy) achieve
+  comparable ECG performance with identical hyperparameters
+- The architecture is "modality-portable" (same code, different data)
+
+**Does NOT show:**
+- That the hybrid variant is "best" (no significant difference)
+- That ENGRAM is competitive with task-specific baselines (ResNet1D is
+  numerically better and more parameter-efficient)
+- That any specific component (conv, FFN, hybrid mixing) is load-bearing
+  (no component ablation yet — run `scripts/run_component_ablation.sh`)
+
 
 ## Honest gaps / TODO before submission
 
