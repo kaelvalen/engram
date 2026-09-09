@@ -3,7 +3,7 @@
 # recall, AND final min expert utilization ≥ 10% (no hard collapse).
 #
 # Recipe note (2026-07-17): on the 8 GB RTX 5060 the spec's full sweep
-# (64 pairs @ vocab 8k) does not reach the MQAR "click" inside 2k steps —
+# (64 pairs @ vocab 8k) does not reach the MQAR "click" inside 2k steps -
 # that is an optimization-budget property of the benchmark, not a model bug
 # (all models overfit a fixed batch to 100% in <100 steps; fp64 suites pass).
 # This config is the learnable endpoint of the sweep used for the gate

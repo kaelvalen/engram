@@ -19,8 +19,8 @@ import torch
 
 @dataclass
 class StateTrackConfig:
-    num_elements: int = 5  # N — track the image of one element (the hard core)
-    num_generators: int = 4  # G — fixed permutation set
+    num_elements: int = 5  # N - track the image of one element (the hard core)
+    num_generators: int = 4  # G - fixed permutation set
     seq_len: int = 1024  # total length incl. x0, MARK, PAD
     perm_seed: int = 12345  # fixed ⇒ identical task across batches/seeds
 

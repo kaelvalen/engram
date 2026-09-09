@@ -40,9 +40,9 @@ def _fit_window(signal: np.ndarray, window_size: int) -> np.ndarray:
 class PTBXLDataset(Dataset):
     """PTB-XL ECG Dataset loader.
 
-    Beklenen dizin yapısı:
+    Expected directory layout:
         root/
-            records100/   veya records500/
+            records100/   or records500/
             ptbxl_database.csv
             scp_statements.csv
 
@@ -50,7 +50,7 @@ class PTBXLDataset(Dataset):
     pip install wfdb
     """
 
-    # 5 süper-sınıf
+    # 5 diagnostic superclasses
     SUPERCLASSES = ["NORM", "MI", "STTC", "CD", "HYP"]
 
     def __init__(
@@ -111,7 +111,7 @@ class PTBXLDataset(Dataset):
 
         df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
 
-        # Full scp_statements table (NOT pre-filtered — task_vocab/record_labels
+        # Full scp_statements table (NOT pre-filtered - task_vocab/record_labels
         # filter per task). Plain-dict view keeps the mapping logic pandas-free.
         scp_df = pd.read_csv(os.path.join(self.root, "scp_statements.csv"), index_col=0)
         scp = scp_df.to_dict("index")

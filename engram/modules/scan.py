@@ -11,14 +11,14 @@ The combination operator on (decay, input) pairs is associative:
 
 Three backends are provided:
 
-* :func:`seq_recurrence`        — sequential reference (Python loop).
-* :func:`hillis_steele_recurrence` — fully vectorized recursive doubling.
-* :func:`assoc_recurrence`      — :func:`torch.associative_scan` (fused kernel)
+* :func:`seq_recurrence`        - sequential reference (Python loop).
+* :func:`hillis_steele_recurrence` - fully vectorized recursive doubling.
+* :func:`assoc_recurrence`      - :func:`torch.associative_scan` (fused kernel)
                                   with automatic fallback to Hillis-Steele.
 
 The previous hand-written Blelloch up/down-sweep used strided indexed
 assignment (``a[:, :, idx_r] = ...``), which compiles to non-contiguous
-scatter writes that are 3–10× slower than reshape-based ops on modern GPUs.
+scatter writes that are 3-10× slower than reshape-based ops on modern GPUs.
 The Hillis-Steele formulation here uses only in-place slicing inside a custom
 autograd Function, keeping the graph correct while avoiding the large
 per-level ``torch.cat`` allocations that blow up memory on long sequences.

@@ -1,4 +1,4 @@
-"""Training wiring: MQAR task, B1–B5 baselines, and the spike training loop."""
+"""Training wiring: MQAR task, B1-B5 baselines, and the spike training loop."""
 
 from __future__ import annotations
 

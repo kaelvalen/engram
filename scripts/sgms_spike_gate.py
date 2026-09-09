@@ -85,10 +85,10 @@ def main() -> int:
             cells.append(
                 f"{torch.tensor(accs).mean():.3f}±{torch.tensor(accs).std():.3f}"
                 if accs
-                else "  —  "
+                else "  -  "
             )
         fa = torch.tensor(s["final_acc"])
-        mu = f"{min(s['min_util']):.3f}" if s["min_util"] else " — "
+        mu = f"{min(s['min_util']):.3f}" if s["min_util"] else " - "
         print(
             f"{kind:<5}  "
             + "  ".join(cells)

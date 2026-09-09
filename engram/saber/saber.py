@@ -106,7 +106,7 @@ class Predictor(nn.Module):
 class SurpriseEstimator(nn.Module):
     """Normalized absolute prediction error, tracked with running μ/σ.
 
-    Buffers update only in training mode — evaluation forwards must not
+    Buffers update only in training mode - evaluation forwards must not
     contaminate the estimator's statistics.
     """
 
@@ -140,7 +140,7 @@ class SurpriseEstimator(nn.Module):
 class SparseMemoryActivation(nn.Module):
     """Vectorized top-k slot readout. Per token, the ``budget`` (≥1, ≤ M)
     highest-scoring slots are mixed with softmax weights that sum to 1 over
-    the selected set — differentiable everywhere except through the integer
+    the selected set - differentiable everywhere except through the integer
     counts themselves.
     """
 

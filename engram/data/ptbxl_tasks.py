@@ -4,12 +4,12 @@ PTB-XL is benchmarked over six task groups (Strodthoff et al. 2020;
 helme/ecg_ptbxl_benchmarking). Each maps a record's SCP codes to a different
 label vocabulary; all are **multi-label**:
 
-    superdiag — 5 diagnostic superclasses (NORM/MI/STTC/CD/HYP)
-    subdiag   — diagnostic subclasses
-    diag      — diagnostic statements
-    form      — form statements
-    rhythm    — rhythm statements
-    all       — every SCP statement
+    superdiag - 5 diagnostic superclasses (NORM/MI/STTC/CD/HYP)
+    subdiag   - diagnostic subclasses
+    diag      - diagnostic statements
+    form      - form statements
+    rhythm    - rhythm statements
+    all       - every SCP statement
 
 These functions operate on a plain dict view of ``scp_statements.csv``:
 
@@ -17,8 +17,8 @@ These functions operate on a plain dict view of ``scp_statements.csv``:
                   "diagnostic_subclass": "...", "diagnostic_class": "..."}, ...}
 
 so they need no pandas (the dataset passes ``scp_df.to_dict("index")``). The
-label *vocabulary* is derived from the full statement table — not from any data
-split — so train/val/test share identical class indices.
+label *vocabulary* is derived from the full statement table - not from any data
+split - so train/val/test share identical class indices.
 """
 
 from __future__ import annotations

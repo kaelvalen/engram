@@ -23,12 +23,12 @@ class ModalityConfig:
 
 @dataclass
 class ENGRAMConfig:
-    # Model boyutu
+    # Model dimensions
     hidden_dim: int = 256
     num_heads: int = 8
     num_layers: int = 12
 
-    # Blok dağılımı (legacy interleave): her delta_every. katman "delta".
+    # Block distribution (legacy interleave): every delta_every layer is "delta".
     delta_every: int = 4
 
     # Explicit per-layer pattern. When set, overrides delta_every / force_block_type.
@@ -37,22 +37,22 @@ class ENGRAMConfig:
     block_pattern: list[str] | str | None = None
 
     # SSM implementation for the "s4" role.
-    #   "ssd"        — Mamba-2-style SSD: scalar-per-head decay, per-channel state,
+    #   "ssd"        - Mamba-2-style SSD: scalar-per-head decay, per-channel state,
     #                  input-dependent (selective) Δ/B/C. No mean-over-Dh collapse.
-    #   "s4d_legacy" — original diagonal S4D-Complex block (kept as ablation row).
+    #   "s4d_legacy" - original diagonal S4D-Complex block (kept as ablation row).
     ssm_kind: str = "ssd"
 
     # S4D-legacy init: "lin" (S4D-Lin, A_n = -1/2 + iπn) or "legacy" (the original
     # linspace/π·arange init). Only used when ssm_kind == "s4d_legacy".
     s4d_init: str = "lin"
 
-    # S4 / SSD parametreleri
+    # S4 / SSD parameters
     s4_state_mult: int = 2
     s4_dt_min: float = 0.001
     s4_dt_max: float = 0.1
     ssd_state_dim: int = 64  # N for the SSD block (state dim per head, shared over Dh)
 
-    # Delta parametreleri
+    # Delta parameters
     delta_chunk_size: int = 64
     qk_norm: bool = True
     gate_bias_init: float = 4.0
@@ -64,9 +64,9 @@ class ENGRAMConfig:
     delta_memoryless: bool = False  # If True, zeroes recurrent memory state (instantaneous linear attention)
 
     # Scan backend for the SSD/S4D linear recurrence:
-    #   "auto"      — torch.associative_scan if available, else reference.
-    #   "assoc"     — force torch.associative_scan.
-    #   "reference" — vectorized Hillis-Steele scan (no torch HOP, always correct).
+    #   "auto"      - torch.associative_scan if available, else reference.
+    #   "assoc"     - force torch.associative_scan.
+    #   "reference" - vectorized Hillis-Steele scan (no torch HOP, always correct).
     scan_backend: str = "auto"
 
     # Sliding-window attention (used by "swa" layers).
@@ -88,10 +88,10 @@ class ENGRAMConfig:
     # config where the SSD scan tree is large.
     gradient_checkpointing: bool = False
 
-    # Modaliteler
+    # Modalities
     modalities: list[ModalityConfig] = field(default_factory=list)
 
-    # Pooling stratejisi: "mean" veya "last"
+    # Pooling strategy: "mean" or "last"
     pool_type: str = "mean"
 
     # Ablation: None = normal S4/Delta interleave; "s4" | "delta" = all layers that type.
@@ -200,7 +200,7 @@ class ENGRAMConfig:
         return self.head_dim * self.s4_state_mult
 
     def layer_type(self, i: int) -> str:
-        """i. katmanın rol token'ı: 's4', 'delta' veya 'swa'."""
+        """Role token for layer i: 's4', 'delta', or 'swa'."""
         if self.block_pattern is not None:
             return self.block_pattern[i]
         if self.force_block_type is not None:

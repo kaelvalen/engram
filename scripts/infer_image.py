@@ -1,4 +1,4 @@
-"""ENGRAM — Image inference and evaluation.
+"""ENGRAM - Image inference and evaluation.
 
 Usage:
     python scripts/infer_image.py --checkpoint output/best_image.pt --image path/to/image.png

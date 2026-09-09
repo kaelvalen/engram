@@ -57,7 +57,7 @@ class SWAState:
     """KV-cache state for streaming sliding-window attention.
 
     Holds the RoPE-applied keys and values of the last `window` tokens seen so
-    far — covering absolute positions [pos - W, pos), where W <= window — plus
+    far - covering absolute positions [pos - W, pos), where W <= window - plus
     `pos`, the number of tokens processed (absolute position of the next one).
     Feeding the state returned by one chunk into the next makes chunked (or
     token-by-token) decoding exactly equal a single full-sequence forward.
@@ -65,7 +65,7 @@ class SWAState:
 
     In the SGMS masked execution path (§3.4) the cache instead holds the last
     `window` *routed* keys/values and `pos` is a per-batch tensor counting
-    routed tokens — the expert's own subsequence time axis.
+    routed tokens - the expert's own subsequence time axis.
     """
 
     k: torch.Tensor  # [B, H, W, Dh] RoPE-applied keys of the last <= window tokens
@@ -118,7 +118,7 @@ class SlidingWindowAttention(nn.Module):
 
         With ``state=None`` this is the original full-sequence path.  With a
         state, the chunk's queries attend to the cached window of previous
-        RoPE-applied keys/values plus their own causal window — exactly equal
+        RoPE-applied keys/values plus their own causal window - exactly equal
         to a single full-sequence forward (fp64-tested).
 
         ``write_mask`` (SGMS §3.4) switches to the masked execution path:
@@ -165,8 +165,8 @@ class SlidingWindowAttention(nn.Module):
         subsequence only. Non-routed tokens are never written to the KV cache
         and are masked out as keys; their query outputs are computed but
         meaningless (the caller gathers outputs at routed positions only).
-        RoPE positions run along the routed subsequence — the expert's own
-        time axis — so chunked streaming with state hand-off stays exactly
+        RoPE positions run along the routed subsequence - the expert's own
+        time axis - so chunked streaming with state hand-off stays exactly
         equal to a single full-sequence masked forward (fp64-tested).
         """
         B, T, _ = x.shape

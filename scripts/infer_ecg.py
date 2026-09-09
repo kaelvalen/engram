@@ -1,4 +1,4 @@
-"""ENGRAM — ECG inference and evaluation.
+"""ENGRAM - ECG inference and evaluation.
 
 Usage:
     python scripts/infer_ecg.py --checkpoint output/best_ecg.pt --ptbxl-test

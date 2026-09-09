@@ -3,7 +3,7 @@
 #
 # Reproduces every row of the paper tables. Datasets must be present under
 # $DATA_ROOT (see EXPERIMENTS.md). Each config is run over $SEEDS seeds; report
-# mean ± std, never single-best. Budget ≈ 30–60 single-GPU-hours.
+# mean ± std, never single-best. Budget ≈ 30-60 single-GPU-hours.
 #
 # Usage:
 #   DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=50 bash scripts/run_benchmarks.sh

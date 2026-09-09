@@ -71,7 +71,7 @@ def main():
     }
 
     # ---- 1. Summary ----
-    print(f"# Statistical Analysis Report — {args.metric}")
+    print(f"# Statistical Analysis Report - {args.metric}")
     print(f"\nResults directory: `{root}`")
     print(f"Significance level: α = {args.alpha}")
     print()
@@ -90,7 +90,7 @@ def main():
         params = param_counts.get(config)
         eff = mean / (params / 100_000) if params else float("nan")
 
-        ci_str = f"[{ci_lo:.4f}, {ci_hi:.4f}]" if n > 1 else "—"
+        ci_str = f"[{ci_lo:.4f}, {ci_hi:.4f}]" if n > 1 else "-"
         params_str = f"~{params // 1000}k" if params else "?"
         eff_str = f"{eff:.4f}" if not math.isnan(eff) else "?"
 
@@ -193,7 +193,7 @@ def main():
             mde = float("nan")
             interp = "Need ≥ 2 seeds with nonzero variance"
 
-        mde_str = f"{mde:.4f}" if not math.isnan(mde) else "—"
+        mde_str = f"{mde:.4f}" if not math.isnan(mde) else "-"
         print(f"| {config} | {n} | {std:.4f} | {mde_str} | {interp} |")
 
     # ---- 4. Parameter efficiency ranking ----

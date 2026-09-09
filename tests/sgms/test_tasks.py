@@ -91,7 +91,7 @@ def test_state_track_label_is_correct_composition():
             state = int(perms[tok - N, state])
         assert seq[-2] == N + G  # MARK
         assert lab[-1] == state
-        assert seq[-1] == N + G + 1  # PAD — no answer leak
+        assert seq[-1] == N + G + 1  # PAD - no answer leak
 
 
 def test_state_track_generator_set_is_fixed_across_batches():

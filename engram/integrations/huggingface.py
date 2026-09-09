@@ -1,4 +1,4 @@
-"""Optional Hugging Face–style save/load and ``PreTrainedModel`` shim."""
+"""Optional Hugging Face-style save/load and ``PreTrainedModel`` shim."""
 
 from __future__ import annotations
 

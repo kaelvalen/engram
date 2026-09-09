@@ -187,7 +187,7 @@ class GatedDeltaRule(nn.Module):
     @staticmethod
     def _recurrent_vectorized(q, k, v, alpha, beta, S0, chunk_size):
         """Vectorized chunkwise gated delta rule, mathematically equivalent to
-        _recurrent_naive — in the division-free (log-space decay-ratio) form.
+        _recurrent_naive - in the division-free (log-space decay-ratio) form.
 
         Within a chunk, with e_t = v_t - α_t S_{t-1} k_t and γ_t = Π_{i≤t} α_i:
             e_t  = v_t - γ_t (S_0 k_t) - Σ_{s<t} (γ_t/γ_s) β_s (k_t·k_s) e_s
@@ -256,12 +256,12 @@ class GatedDeltaRule(nn.Module):
         Maps our (alpha = per-step forget gate ∈ (0,1), beta = write gate) to
         FLA's op-level signature ``(q, k, v, g, beta, ...)``.
 
-        IMPORTANT — `g` is the **per-step log decay** g_t = log α_t (NOT the
+        IMPORTANT - `g` is the **per-step log decay** g_t = log α_t (NOT the
         cumulative sum): the op kernel forms the cumulative diagonal decays
         internally (chunk_local_cumsum). This matches the op-level API of FLA
         0.3.x (the version pinned in pyproject). Note the *layer-level*
         GatedDeltaNet in newer FLA takes a raw projection plus A_log/dt_bias and
-        sets use_gate_in_kernel=True — a different, higher-level convention we do
+        sets use_gate_in_kernel=True - a different, higher-level convention we do
         not use here. Because the exact mapping is version-dependent, this path
         is only trustworthy once tests/test_delta_equivalence.py passes on GPU;
         that test is the gate, not this comment.
@@ -272,8 +272,8 @@ class GatedDeltaRule(nn.Module):
         triggers the caller's graceful fallback rather than a silent miscompute.
 
         STATE LAYOUT (verified against fla 0.3.2 on GPU): the kernel keeps the
-        transposed convention — its ``initial_state`` is (dk, dv) and its
-        returned final state is (dk, dv) — while our ``DeltaState.S`` is
+        transposed convention - its ``initial_state`` is (dk, dv) and its
+        returned final state is (dk, dv) - while our ``DeltaState.S`` is
         (dv, dk). We therefore transpose S0 in and the result back out.
         """
         fn = _load_fla()

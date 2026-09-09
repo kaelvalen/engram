@@ -2,10 +2,10 @@
 
     B1  ENGRAM fixed 3:1 SSD:GDR hybrid (the incumbent)
     B2  SSD-only        B3  GDR-only
-    B4  SGMS with frozen uniform routing (g = 1/K) — value of *learned* routing
-    B5  SGMS with seeded random per-token routing — value vs. arbitrary routing
+    B4  SGMS with frozen uniform routing (g = 1/K) - value of *learned* routing
+    B5  SGMS with seeded random per-token routing - value vs. arbitrary routing
 
-B4/B5 are SGMSLM instances with the router mode overridden; B1–B3 are stacks
+B4/B5 are SGMSLM instances with the router mode overridden; B1-B3 are stacks
 of the corresponding ENGRAM residual blocks (mixer + conv + FFN), i.e. the
 fixed-composition incumbent family.
 """
@@ -28,7 +28,7 @@ BASELINE_KINDS = ("B1", "B2", "B3", "B4", "B5")
 
 def layer_pattern(kind: str, num_layers: int) -> list[str]:
     """Fixed per-layer composition for the incumbent baselines."""
-    if kind == "B1":  # ENGRAM 3:1 SSD:GDR — the special case SGMS recovers (§1.2)
+    if kind == "B1":  # ENGRAM 3:1 SSD:GDR - the special case SGMS recovers (§1.2)
         return [("gdr" if (i + 1) % 4 == 0 else "ssd") for i in range(num_layers)]
     if kind == "B2":
         return ["ssd"] * num_layers
@@ -66,7 +66,7 @@ def _build_engram_block(name: str, cfg: SGMSConfig) -> nn.Module:
 
 
 class HybridLM(nn.Module):
-    """Fixed-composition ENGRAM backbone + LM head (B1–B3)."""
+    """Fixed-composition ENGRAM backbone + LM head (B1-B3)."""
 
     def __init__(self, kind: str, cfg: SGMSConfig, vocab_size: int):
         super().__init__()

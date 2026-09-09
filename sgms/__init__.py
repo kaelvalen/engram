@@ -1,4 +1,4 @@
-"""SGMS — Mixture of Memory Primitives.
+"""SGMS - Mixture of Memory Primitives.
 
 Replaces the fixed hybrid block at each ENGRAM layer with a bank of
 heterogeneous memory primitives (SSD, GDR, optionally SWA) and a per-token

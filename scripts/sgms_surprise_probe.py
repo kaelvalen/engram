@@ -3,7 +3,7 @@
 Sweeps a *frozen* per-expert surprise_weight (and scale) while the per-layer
 SurprisePredictor trains, to ask the cheapest question first: "is the learned
 surprise signal useful AT ALL?" (before any learnability work). Not
-architectural learning — a fixed-scale insurance probe. If no setting moves
+architectural learning - a fixed-scale insurance probe. If no setting moves
 recall, the predictor/signal design is suspect before Stage 1/2.
 
 Each grid cell freezes surprise_weight (probe) and trains the predictor via its

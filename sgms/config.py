@@ -29,7 +29,7 @@ class SGMSConfig:
     top_k: int = 1
     router_mode: str = "learned"  # learned | uniform (B4) | random (B5)
     router_bias: bool = False  # optional input-independent b_e (default off)
-    router_init_std: float = 0.01  # W_r ~ N(0, 0.01²) — near-uniform init
+    router_init_std: float = 0.01  # W_r ~ N(0, 0.01²) - near-uniform init
     router_seed: int = 0  # generator seed for router_mode="random"
     straight_through: bool = False  # ST gate estimator, R4 fallback
     router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
@@ -52,7 +52,7 @@ class SGMSConfig:
     lambda_bal: float = 1e-2
     lambda_z: float = 1e-3
 
-    # Expert hyperparameters — ENGRAM defaults (§3.2)
+    # Expert hyperparameters - ENGRAM defaults (§3.2)
     ssd_state_dim: int = 64
     s4_dt_min: float = 0.001
     s4_dt_max: float = 0.1

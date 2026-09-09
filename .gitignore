@@ -52,7 +52,7 @@ coverage.xml
 *.cover
 htmlcov/
 
-# Training / experiment outputs (repo root — avoids shadowing package dirs)
+# Training / experiment outputs (repo root - avoids shadowing package dirs)
 /output/
 /runs/
 /logs/

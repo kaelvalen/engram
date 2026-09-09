@@ -300,7 +300,7 @@ def forward_block(
     x: torch.Tensor,
     state: BlockState | None,
 ) -> tuple[torch.Tensor, BlockState]:
-    """Type-agnostic block forward — ``ENGRAMBackbone`` calls this.
+    """Type-agnostic block forward - ``ENGRAMBackbone`` calls this.
 
     All blocks (S4/SSD/Delta/SWA) share the same signature:
         (x, conv_state, mixer_state) -> (x, new_conv_state, new_mixer_state)

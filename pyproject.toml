@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "engram"
 version = "0.1.0"
-description = "ENGRAM — modality-portable hybrid linear-recurrent (SSD + Gated Delta) sequence backbone"
+description = "ENGRAM - modality-portable hybrid linear-recurrent (SSD + Gated Delta) sequence backbone"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -22,10 +22,10 @@ train = [
     "pandas>=2",
     "torchaudio>=2.1",
 ]
-# Optional GPU kernels: production delta-rule / SSD backends. All are optional —
+# Optional GPU kernels: production delta-rule / SSD backends. All are optional -
 # the pure-PyTorch reference paths run without them (see modules/delta.py,
 # modules/ssd.py). Pin FLA per its CI-tested Triton version (kernel-stability
-# issues on some Triton releases, e.g. fla-org #734 on H100 w/ Triton 3.2–3.6).
+# issues on some Triton releases, e.g. fla-org #734 on H100 w/ Triton 3.2-3.6).
 gpu = [
     "flash-linear-attention>=0.3.2,<0.4",
     "mamba-ssm>=2.2",

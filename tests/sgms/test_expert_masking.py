@@ -4,11 +4,11 @@ The SGMS router selects a memory primitive per token.  Under dense-masked
 execution the routed expert must behave *as if it only saw its own
 subsequence*:
 
-SSD  — the write term is zeroed on a miss, so the update is
+SSD  - the write term is zeroed on a miss, so the update is
        ``s_t = a_t ⊙ s_{t-1} + 0``.  With ``decay_on_skip: true`` (spec D1,
        the default) the decay still applies on a miss; with ``false`` the
        state is frozen (``freeze_on_mask=True`` at the mixer level).
-GDR  — ``k, v, β`` are masked, so the transition ``(I − β̃ k̃ k̃ᵀ)`` collapses
+GDR  - ``k, v, β`` are masked, so the transition ``(I − β̃ k̃ k̃ᵀ)`` collapses
        to identity and the write vanishes.  The spec's GDR equation
        (Appendix A) has no α forget gate; to honour §3.4's "state passes
        through exactly" on ENGRAM's gated variant, α is neutralised to 1 on a

@@ -1,4 +1,4 @@
-"""MQAR — multi-query associative recall (Arora-style; spec §5.1, spike task).
+"""MQAR - multi-query associative recall (Arora-style; spec §5.1, spike task).
 
 Sequence layout (length ``seq_len``)::
 
@@ -6,7 +6,7 @@ Sequence layout (length ``seq_len``)::
 
 with n = ``num_pairs`` presented key→value pairs and m = n queries (all keys,
 reshuffled).  Filler is a reserved token id (``vocab_size - 1``).  The model
-is scored only on the position immediately after each query token — the
+is scored only on the position immediately after each query token - the
 correct continuation is the value bound to that key.
 """
 

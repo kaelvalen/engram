@@ -54,7 +54,7 @@ def test_shape_and_range():
 
 def test_signed_surprise_is_centered_when_mu_trained():
     """Once mu tracks abs_diff (many training steps), surprise is centered ~0
-    (can be negative) — that is what lets a per-expert weight perturb rather
+    (can be negative) - that is what lets a per-expert weight perturb rather
     than bias the router."""
     pred = SurprisePredictor(hidden_dim=16).train()
     torch.manual_seed(0)
@@ -156,7 +156,7 @@ def test_block_wiring_runs_with_internal_predictor_and_override_wins():
 
 def test_predictor_actually_learns():
     """The online head must genuinely reduce prediction error on a learnable
-    (periodic) sequence — guard against the 'predictor never trained' failure
+    (periodic) sequence - guard against the 'predictor never trained' failure
     where surprise would be a fixed random projection."""
     torch.manual_seed(0)
     D, T, B = 16, 48, 4

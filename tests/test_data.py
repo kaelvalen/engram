@@ -23,8 +23,8 @@ def test_ecg_failure_gate_raises_at_boundary():
 
 
 def test_ecg_failure_gate_passes_under_threshold():
-    """5% failure (1/20) is below 10% threshold — should not raise."""
-    _check_ecg_failure_rate([1], 20)  # 5% — OK
+    """5% failure (1/20) is below 10% threshold - should not raise."""
+    _check_ecg_failure_rate([1], 20)  # 5% - OK
 
 
 def test_ecg_failure_gate_passes_on_zero_total():

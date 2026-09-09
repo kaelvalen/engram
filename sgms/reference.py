@@ -1,7 +1,7 @@
 """Sequential token-by-token SGMSBlock reference (spec §9 ground truth).
 
 Routes every token individually through the experts' T==1 decode paths.
-Ground truth for the equivalence tests — correct by inspection, not on the
+Ground truth for the equivalence tests - correct by inspection, not on the
 hot path.  Learned-mode routing and optional expert knockout only.
 """
 
@@ -25,7 +25,7 @@ def sequential_block_reference(
 
     The router is pointwise in t, so dense and sequential routing decisions
     coincide.  Non-selected experts still advance their (masked) state every
-    step — decaying (SSD default, D1) or frozen (decay_on_skip=False) —
+    step - decaying (SSD default, D1) or frozen (decay_on_skip=False) -
     exactly as in the dense-masked path.
     """
     cfg = block.cfg

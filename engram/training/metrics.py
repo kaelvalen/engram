@@ -11,7 +11,7 @@ import torch
 
 
 def binary_auroc(scores: torch.Tensor, positive: torch.Tensor) -> float | None:
-    """Rank-based binary AUROC (Mann–Whitney U). Returns None if the class is
+    """Rank-based binary AUROC (Mann-Whitney U). Returns None if the class is
     degenerate (all-positive or all-negative). Ties handled via average ranks.
     """
     scores = scores.detach().float().flatten()

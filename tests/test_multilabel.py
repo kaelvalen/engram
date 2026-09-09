@@ -1,5 +1,5 @@
 """Multi-label path: BCE loss, label-wise accuracy, accumulating macro AUROC,
-and bootstrap CI — the PTB-XL evaluation protocol, validated on synthetic data
+and bootstrap CI - the PTB-XL evaluation protocol, validated on synthetic data
 (no dataset download needed).
 """
 

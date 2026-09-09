@@ -30,7 +30,7 @@ def _resolve_amp(amp: str | None) -> torch.dtype | None:
     if amp not in _AMP_DTYPES:
         raise ValueError(
             f"Unsupported amp dtype: {amp!r}. Supported: 'bf16' (or 'off' to disable). "
-            "fp16 not supported here — would need a GradScaler. Use bf16 on Ampere+ GPUs."
+            "fp16 not supported here - would need a GradScaler. Use bf16 on Ampere+ GPUs."
         )
     return _AMP_DTYPES[amp]
 

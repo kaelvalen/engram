@@ -82,7 +82,7 @@ def main() -> int:
         covered = sum(1 for codes in records if record_labels(scp, codes, task))
         print(f"  records with ≥1 {task:<10} label: {covered:>6} / {len(records)}")
 
-    print("\nRESULT:", "OK — vocabularies match the benchmark" if ok else "FAILED")
+    print("\nRESULT:", "OK - vocabularies match the benchmark" if ok else "FAILED")
     return 0 if ok else 1
 
 

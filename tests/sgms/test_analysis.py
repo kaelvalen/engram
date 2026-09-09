@@ -1,4 +1,4 @@
-"""Analysis suite tests (spec §7 — the primary scientific deliverable)."""
+"""Analysis suite tests (spec §7 - the primary scientific deliverable)."""
 
 from __future__ import annotations
 

@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 
 
 def patchify(x: torch.Tensor, patch_size: int = 4) -> torch.Tensor:
-    """CIFAR görüntüsünü patch sequence'e çevir.
+    """Convert CIFAR image into a sequence of non-overlapping patches.
 
     x: [B, C, H, W]
     returns: [B, num_patches, patch_size*patch_size*C]
@@ -26,7 +26,7 @@ def patchify(x: torch.Tensor, patch_size: int = 4) -> torch.Tensor:
 
 
 class PatchCollator:
-    """DataLoader collate fn — batch'i patchify eder."""
+    """DataLoader collate function: patchifies image batches."""
 
     def __init__(self, patch_size: int = 4):
         self.patch_size = patch_size
@@ -45,7 +45,7 @@ def get_cifar_loaders(
     patch_size: int = 4,
     num_workers: int = 4,
 ) -> tuple[DataLoader, DataLoader]:
-    """CIFAR-10 DataLoader — patchified.
+    """CIFAR-10 DataLoader - patchified.
 
     patch_size=4 → 32/4 = 8 → 8×8 = 64 patches per image
     input_dim = 4×4×3 = 48

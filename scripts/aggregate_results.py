@@ -1,7 +1,7 @@
 """Aggregate per-seed benchmark checkpoints into mean ± std tables.
 
 Walks <results>/<config>/seed<N>/best_*.pt, reads the recorded val metrics, and
-prints a markdown table grouped by config. Report mean ± std across seeds —
+prints a markdown table grouped by config. Report mean ± std across seeds -
 never single-best.
 
 Enhanced (2026-09-09): paired t-test, Cohen's d, bootstrap CI, parameter
@@ -227,7 +227,7 @@ def main():
         return
 
     # ---- Summary table ----
-    print(f"\n## Summary — {args.metric}\n")
+    print(f"\n## Summary - {args.metric}\n")
     print(f"| Config | Seeds | {args.metric} (mean ± std) | Seed-level 95% CI | Params | {args.metric}/100k |")
     print("|---|---|---|---|---|---|")
 
@@ -240,7 +240,7 @@ def main():
         std = statistics.stdev(vals) if n > 1 else 0.0
 
         _, ci_lo, ci_hi = bootstrap_ci(vals)
-        ci_str = f"[{ci_lo:.4f}, {ci_hi:.4f}]" if n > 1 else "—"
+        ci_str = f"[{ci_lo:.4f}, {ci_hi:.4f}]" if n > 1 else "-"
 
         params = param_counts.get(config)
         params_str = f"~{params // 1000}k" if params else "?"
@@ -286,7 +286,7 @@ def main():
             # Align seeds: use min(len) pairs
             n_pairs = min(len(ref_vals), len(vals))
             if n_pairs < 2:
-                print(f"| {config} | — | — | — | — | too few seeds |")
+                print(f"| {config} | - | - | - | - | too few seeds |")
                 continue
 
             a, b = ref_vals[:n_pairs], vals[:n_pairs]
@@ -336,7 +336,7 @@ def main():
             n = len(vals)
             std = statistics.stdev(vals) if n > 1 else 0.0
             mde = minimum_detectable_effect(n, std)
-            mde_str = f"{mde:.4f}" if not math.isnan(mde) else "—"
+            mde_str = f"{mde:.4f}" if not math.isnan(mde) else "-"
             print(f"| {config} | {n} | {std:.4f} | {mde_str} |")
 
     # ---- JSON export ----

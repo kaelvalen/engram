@@ -229,7 +229,7 @@ def main(argv=None):
         out_file.write_text(json.dumps(summary, indent=2))
         acc = summary["final"].get("accuracy", float("nan"))
         min_util = summary["final"].get("min_utilization")
-        min_util_s = f"{min_util:.3f}" if min_util is not None else "—"
+        min_util_s = f"{min_util:.3f}" if min_util is not None else "-"
         print(
             f"[{config.get('experiment')}] seed={seed} acc={acc:.4f} "
             f"task_loss={summary['final']['task_loss']:.4f} min_util={min_util_s} "

@@ -1,4 +1,4 @@
-"""Hand-derived Blelloch (1990) work-efficient parallel scan — preserved.
+"""Hand-derived Blelloch (1990) work-efficient parallel scan - preserved.
 
 This is the original from-scratch up-sweep / down-sweep implementation. It is
 kept as a *teaching and numerical-equivalence reference* only: the production

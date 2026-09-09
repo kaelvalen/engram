@@ -1,5 +1,5 @@
 {
-  description = "ENGRAM — modality-portable hybrid linear-recurrent (SSD + Gated Delta) backbone";
+  description = "ENGRAM - modality-portable hybrid linear-recurrent (SSD + Gated Delta) backbone";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -25,9 +25,9 @@
         # to track fast-moving packages such as flash-linear-attention.
         cudaToolkit = pkgs.cudaPackages.cudatoolkit;
 
-        # PyPI wheel'leri (özellikle PyTorch) kendi libstdc++'sını getirmez.
-        # Nix store'daki GCC runtime kütüphanelerini PATH'a eklemek, wheel
-        # içindeki native extension'ların çalışması için gerekli.
+        # PyPI wheels (particularly PyTorch) do not bundle libstdc++.
+        # Adding GCC runtime libraries from the Nix store to the environment
+        # is required for native extensions inside wheels to link properly.
         gccLib = pkgs.stdenv.cc.cc.lib;
         zlib = pkgs.zlib;
       in

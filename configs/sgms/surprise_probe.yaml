@@ -1,6 +1,6 @@
 # Stage-0 surprise probe (design §6.4, stage 0): fixed-scale, frozen per-expert
 # surprise_weight sweep. Question: "is the learned surprise signal useful AT ALL?"
-# Not architectural learning — an insurance probe before Stages 1/2.
+# Not architectural learning - an insurance probe before Stages 1/2.
 #
 # The per-cell surprise_weight is set by scripts/sgms_surprise_probe.py's grid;
 # this file pins the base (predictor on, pred-loss weighting, probe freeze).

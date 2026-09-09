@@ -9,7 +9,7 @@ y_t = Σ_{e ∈ S_t} g_{t,e} · y_{t,e}; the optional shared SSD expert
 (§3.7) is always on and adds its output ungated.
 
 Dense-masking cost note (§3.4): all K experts execute over the full
-sequence — accepted in v1, replaced by gathered execution in v2.
+sequence - accepted in v1, replaced by gathered execution in v2.
 """
 
 from __future__ import annotations

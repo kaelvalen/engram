@@ -38,7 +38,7 @@ class SGMSLM(nn.Module):
         per-layer surprise predictor is enabled (cfg.use_surprise_predictor),
         an auxiliary ``pred_loss`` (MSE of each predictor's online head against
         that block's own input, stop-grad) is accumulated and returned in the
-        dict — only in training mode, so eval stays clean.
+        dict - only in training mode, so eval stays clean.
         """
         if input_ids.ndim != 2 or input_ids.shape[1] == 0:
             raise ValueError(f"input_ids must be [B,T] with T>0, got {tuple(input_ids.shape)}")

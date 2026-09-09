@@ -104,7 +104,7 @@ def evaluate_macro_auc(
     *,
     amp_dtype: torch.dtype | None = None,
 ) -> float:
-    """Macro one-vs-rest AUROC over the whole loader — the PTB-XL metric.
+    """Macro one-vs-rest AUROC over the whole loader - the PTB-XL metric.
 
     Accumulates logits/labels across batches (datasets are small) and computes
     a single macro AUROC, matching the Strodthoff et al. evaluation protocol.
@@ -135,7 +135,7 @@ def evaluate_multilabel_auc(
     *,
     amp_dtype: torch.dtype | None = None,
 ) -> float:
-    """Macro AUROC for multi-label targets ([N, C] multi-hot) — the PTB-XL
+    """Macro AUROC for multi-label targets ([N, C] multi-hot) - the PTB-XL
     all/diag/super-diag/form/rhythm metric. Accumulates sigmoid scores + targets
     across the loader and computes one macro AUROC.
     """

@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, Dataset
 
 
 class SyntheticMelPatchDataset(Dataset):
-    """Pseudo–mel patch sequences for smoke tests and default audio training without files.
+    """Pseudo-mel patch sequences for smoke tests and default audio training without files.
 
     Each item is ``[num_frames, mel_bins]`` (treated like a 1D signal over time).
     """

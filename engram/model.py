@@ -84,9 +84,9 @@ class ENGRAMForClassification(nn.Module):
     Full ENGRAM model for classification tasks.
 
     Forward:
-        x        : [B, T, input_dim]  — raw signal / patch sequence
-        modality : str                — target modality name
-        labels   : [B] optional       — calculate CrossEntropy loss
+        x        : [B, T, input_dim]  - raw signal / patch sequence
+        modality : str                - target modality name
+        labels   : [B] optional       - calculate CrossEntropy loss
 
     Returns:
         dict(logits, loss?)

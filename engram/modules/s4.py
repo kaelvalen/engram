@@ -67,9 +67,9 @@ class S4SSM(nn.Module):
         self.in_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
         # A: diagonal complex, negative real part → stable.
-        #   "lin"    — S4D-Lin (Gu et al. NeurIPS 2022): A_n = -1/2 + iπn, which
+        #   "lin"    - S4D-Lin (Gu et al. NeurIPS 2022): A_n = -1/2 + iπn, which
         #              dominated S4D-Inv / random on shorter sequences.
-        #   "legacy" — original linspace real init + π·arange imaginary init.
+        #   "legacy" - original linspace real init + π·arange imaginary init.
         if init == "lin":
             A_log = torch.full((H, N), math.log(0.5))  # real part = -exp(log .5) = -1/2
             A_imag = math.pi * torch.arange(1, N + 1).unsqueeze(0).repeat(H, 1).float()

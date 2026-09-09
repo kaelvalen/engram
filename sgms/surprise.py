@@ -1,4 +1,4 @@
-"""Lightweight standalone surprise predictor — per-layer, local (design
+"""Lightweight standalone surprise predictor - per-layer, local (design
 decision (b), EXPERIMENTS.md "wiring decision"). Unlike SABER's full
 pipeline (LatentEncoder -> EMA Predictor -> SurpriseEstimator on encoded
 z_t), this predicts each SGMSBlock's own raw pre-norm hidden stream x_t
@@ -67,7 +67,7 @@ class SurprisePredictor(nn.Module):
         """x: [B, T, D]; returns centered, signed surprise [B, T] from the EMA
         (stable) baseline. Signed (mean ~ 0, can be negative) so a per-expert
         router weight modulates token-to-token *deviation* rather than adding a
-        constant bias — fixes the routing-collapse failure at large scale.
+        constant bias - fixes the routing-collapse failure at large scale.
 
         Running mu/sigma update only in training mode; the EMA baseline is
         detached, so surprise never backprops into the predictor here (it is a
@@ -88,7 +88,7 @@ class SurprisePredictor(nn.Module):
         return surprise
 
     def predict_online(self, x: torch.Tensor) -> torch.Tensor:
-        """Online predictor output — separate path for the aux MSE training loss,
+        """Online predictor output - separate path for the aux MSE training loss,
         kept apart from forward() so surprise is always read from the EMA copy.
         """
         return self.online(self._shift(x))

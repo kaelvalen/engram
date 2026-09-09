@@ -8,7 +8,7 @@ import torch.nn.functional as F
 class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization.
 
-    Bias yok, sadece scale — transformer'larda standart hale geldi.
+    No bias, scale only: standard in modern transformer/recurrent architectures.
     """
 
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -26,5 +26,5 @@ class RMSNorm(nn.Module):
 
 
 def l2_normalize(x: torch.Tensor, dim: int = -1, eps: float = 1e-12) -> torch.Tensor:
-    """L2 normalization — QK-norm için."""
+    """L2 normalization for QK-norm."""
     return F.normalize(x, p=2, dim=dim, eps=eps)

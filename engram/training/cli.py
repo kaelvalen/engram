@@ -586,7 +586,7 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     logger.info(
-        "ENGRAM — %s | params: %s | device: %s | block_pattern=%s | ssm_kind=%s",
+        "ENGRAM - %s | params: %s | device: %s | block_pattern=%s | ssm_kind=%s",
         modality.upper(),
         f"{sum(p.numel() for p in model.parameters()):,}",
         device,

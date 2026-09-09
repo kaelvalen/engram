@@ -38,7 +38,7 @@ def specialization_onset(
     history: list[dict], layer: int = 0, drop_fraction: float = 0.5
 ) -> int | None:
     """First eval index where routing entropy fell below
-    ``drop_fraction`` of its initial value — the specialization onset."""
+    ``drop_fraction`` of its initial value - the specialization onset."""
     entropy = entropy_trajectory(history, layer)
     if entropy.size == 0:
         return None

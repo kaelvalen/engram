@@ -5,7 +5,7 @@
 # multi-label macro-AUROC, mean±std over seeds) but uses a much smaller model
 # and fewer epochs so it finishes on a single laptop GPU.
 #
-# Default runtime on an 8 GB laptop GPU is roughly 3–5 hours for EPOCHS=10
+# Default runtime on an 8 GB laptop GPU is roughly 3-5 hours for EPOCHS=10
 # and a single seed. Set EPOCHS=2 for a quick pipeline smoke (~40 min).
 #
 # Usage:

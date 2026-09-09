@@ -31,7 +31,7 @@ def knockout_evaluation(
 ) -> dict:
     """Baseline metric + per-expert knockout metrics with deltas.
 
-    ``metric_fn(model, ids, labels, knockout)`` — knockout is the
+    ``metric_fn(model, ids, labels, knockout)`` - knockout is the
     {layer: {expert}} dict SGMSLM.forward understands.
     """
     num_layers = getattr(model, "cfg").num_layers

@@ -4,7 +4,7 @@
     L_bal = K · Σ_e f_e · P_e   (Switch-style; f hard counts, P mean softmax)
     L_z   = mean_t ( logsumexp(z_t) )²
 
-Both are averaged over the layers that carry the required quantities —
+Both are averaged over the layers that carry the required quantities -
 layers without logits (uniform/random router modes) contribute nothing.
 """
 

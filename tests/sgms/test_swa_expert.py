@@ -1,7 +1,7 @@
 """SWA expert for SGMS (spec §3.4 SWA bullet, v2 activation).
 
 Masked semantics: non-routed tokens are excluded from the expert's window
-and from output gathering — the window slides over the *routed subsequence*
+and from output gathering - the window slides over the *routed subsequence*
 (the expert's own time axis), RoPE positions are subsequence positions, and
 the KV cache holds the last `window` routed keys/values only.
 """

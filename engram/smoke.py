@@ -39,9 +39,9 @@ B, T = 2, 128
 ecg = torch.randn(B, T, 12)
 labels = torch.randint(0, 5, (B,))
 out = model(ecg, modality="ecg", labels=labels)
-logger.info("ECG   — logits: %s, loss: %.4f", out["logits"].shape, out["loss"].item())
+logger.info("ECG   - logits: %s, loss: %.4f", out["logits"].shape, out["loss"].item())
 
 img = torch.randn(B, 64, 48)
 labels = torch.randint(0, 10, (B,))
 out = model(img, modality="image", labels=labels)
-logger.info("Image — logits: %s, loss: %.4f", out["logits"].shape, out["loss"].item())
+logger.info("Image - logits: %s, loss: %.4f", out["logits"].shape, out["loss"].item())

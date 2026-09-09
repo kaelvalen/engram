@@ -75,7 +75,7 @@ def test_chunkwise_single_chunk():
 
 def test_chunkwise_stable_with_tiny_alpha():
     """Learned forget gates can drive α ≪ 1; the chunked path must not divide
-    by ᾱ (which underflows to 0 in fp32) — regression test for NaN/inf."""
+    by ᾱ (which underflows to 0 in fp32) - regression test for NaN/inf."""
     torch.manual_seed(0)
     B, H, T, Dh = 2, 2, 256, 16
     q = torch.randn(B, H, T, Dh)

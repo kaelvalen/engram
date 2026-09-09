@@ -1,4 +1,4 @@
-"""SGMS analysis suite (spec §7) — the primary scientific deliverable.
+"""SGMS analysis suite (spec §7) - the primary scientific deliverable.
 
 Produces a versioned report (report.json + .npy artifacts) covering:
 routing heatmaps, specialization MI, expert knockout, learned composition

@@ -5,8 +5,8 @@
     g_{t,e} = softmax(z_t)_e over e ∈ S_t, renormalised; 0 otherwise
 
 Router parameters are per-layer and independent across layers.  Modes:
-``learned`` (default), ``uniform`` (B4 — frozen g = 1/K ensemble) and
-``random`` (B5 — seeded random per-token assignment, input-independent).
+``learned`` (default), ``uniform`` (B4 - frozen g = 1/K ensemble) and
+``random`` (B5 - seeded random per-token assignment, input-independent).
 
 With k=1 the renormalised gate is exactly 1, so no gradient flows through
 the gate path; the router then learns only via L_bal/L_z (§3.7), matching
@@ -85,7 +85,7 @@ class TokenRouter(nn.Module):
         # Per-expert surprise coefficients, shape [K]. Default zeros => the
         # surprise feature contributes nothing (backward-compatible inert
         # default). When enabled (scale>0) AND these are nonzero, surprise is
-        # expert-dependent and can change the routing decision — a scalar
+        # expert-dependent and can change the routing decision - a scalar
         # broadcast over all experts is softmax/argmax shift-invariant and
         # hence a no-op for top_k=1, so per-expert coefficients are required.
         # Learned in "learned" mode (with top_k>1 or straight_through, else

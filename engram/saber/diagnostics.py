@@ -195,7 +195,7 @@ class SABERTrainer:
 
         self.recovery = SABERRecovery(saber_backbone.saber, cfg)
 
-        # One optimizer over saber param groups PLUS the backbone/head —
+        # One optimizer over saber param groups PLUS the backbone/head -
         # otherwise phase-1 task training has nothing to step.
         param_groups = saber_backbone.saber.get_param_groups()
         backbone_params = list(saber_backbone.backbone.parameters())
