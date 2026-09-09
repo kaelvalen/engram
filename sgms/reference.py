@@ -34,10 +34,9 @@ def sequential_block_reference(
     names = list(block.experts.keys())
     drop = {names.index(n) for n in exclude} if exclude else None
 
-    routing = block.router(x, exclude=drop)
-
     r = x
     x_n = block.norm1(x)
+    routing = block.router(x_n, exclude=drop)
     conv_in = states.get((i, CONV_KEY)) if states is not None else None
     x_c, conv_new = block.conv(x_n, conv_in)
 

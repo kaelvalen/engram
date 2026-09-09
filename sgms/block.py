@@ -86,13 +86,14 @@ class SGMSBlock(nn.Module):
             drop_idx = {names.index(n) for n in exclude}
 
         r = x
+        x_n = self.norm1(x)
         # Surprise source: an explicit external `surprise` overrides; otherwise the
         # layer-local predictor (if enabled) generates it from this block's input.
         if surprise is None and self.surprise_predictor is not None:
-            surprise = self.surprise_predictor(x)
+            surprise = self.surprise_predictor(x_n)
         routing = self.router(
-            x, exclude=drop_idx, surprise=surprise
-        )  # h_t = pre-norm stream (§3.3)
+            x_n, exclude=drop_idx, surprise=surprise
+        )
 
         # Post-hoc renormalisation for non-learned modes (router-level
         # exclusion applies to the learned top-k only).
@@ -104,7 +105,6 @@ class SGMSBlock(nn.Module):
             gates = gates / gates.sum(-1, keepdim=True).clamp_min(1e-12)
             routing = RoutingOutput(gates, mask, routing.indices, routing.logits, routing.probs)
 
-        x_n = self.norm1(x)
         conv_in = states.get((i, CONV_KEY)) if states is not None else None
         x_c, conv_new = self.conv(x_n, conv_in)
 
