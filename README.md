@@ -65,21 +65,27 @@ changing the core config or model code.
 Protocol-identical but reduced (`hidden_dim=64, num_layers=4, batch 8`) run on
 PTB-XL super-diag, **10 epochs, 3 seeds**, best-val macro-AUROC (mean ± std):
 
-| Config | val macro-AUC (mean ± std) |
-|---|---|
-| **ENGRAM hybrid (SSD+GDR)** | **0.8972 ± 0.0021** |
-| Gated DeltaNet only | 0.8978 ± 0.0048 |
-| ENGRAM legacy (S4D+GDR) | 0.8968 ± 0.0024 |
-| Mamba-2 only (SSD) | 0.8960 ± 0.0018 |
-| ResNet1D | 0.9024 ± 0.0008 |
-| small Transformer | 0.8822 ± 0.0016 |
+| Config | Params | val macro-AUC | AUROC/100k |
+|---|---:|---:|---:|
+| ResNet1D | ~127k | **0.9024 ± 0.0008** | **0.7060** |
+| Gated DeltaNet only | ~185k | 0.8978 ± 0.0048 | 0.4845 |
+| **ENGRAM hybrid (SSD+GDR)** | ~258k | 0.8972 ± 0.0021 | 0.3474 |
+| ENGRAM legacy (S4D+GDR) | ~174k | 0.8968 ± 0.0024 | 0.5149 |
+| Mamba-2 only (SSD) | ~282k | 0.8960 ± 0.0018 | 0.3171 |
+| small Transformer | ~3162k | 0.8822 ± 0.0016 | 0.0279 |
+
+**Statistical verdict:** No pairwise difference among the four ENGRAM variants
+is statistically significant (Holm-Bonferroni corrected, 3 seeds). ResNet1D is
+numerically higher and far more parameter-efficient. The only significant
+finding is ResNet1D > Transformer. See `scripts/statistical_analysis.py` for
+the full report with paired t-tests, Cohen's d, and power analysis.
 
 Same protocol on the held-out **PTB-XL test fold** (`infer_ecg.py --ptbxl-test`,
 best-val checkpoints): ENGRAM hybrid **0.8929 ± 0.0022** macro-AUC (seeds
 0.8909 / 0.8953 / 0.8925).
 
 Reproduce with `DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=10 bash scripts/run_benchmarks_laptop.sh`
-then `python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc`.
+then `python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc --detailed`.
 Do not quote these as the paper's main results — they are pipeline validation
 at ~250 K params on a laptop GPU.
 
@@ -90,42 +96,41 @@ and standard deviation across three seeds; the vision and audio runs are Seed 0
 at 10 epochs. Metrics are modality-specific and should not be compared directly
 as a single cross-modal ranking.
 
+⚠ **Statistical caveat:** With 3 seeds the MDE is 0.003–0.008 AUROC — most
+inter-variant differences are within measurement noise. Run
+`scripts/run_full_validation.sh` for 10-seed results.
+
 ### ECG — PTB-XL test set, macro AUROC
 
-| Architecture / model | Parameters | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
-|---|---:|---:|---:|---:|---:|
-| `engram_hybrid_ecg` | ~258k | 0.8909 | 0.8953 | 0.8925 | **0.8929 ± 0.0022** |
-| `engram_legacy_ecg` | ~174k | 0.8899 | 0.8910 | 0.8925 | **0.8911 ± 0.0013** |
-| `gatedelta_only_ecg` | ~185k | 0.8894 | 0.8910 | 0.8919 | **0.8908 ± 0.0013** |
-| `mamba2_only_ecg` | ~282k | 0.8866 | 0.8961 | 0.8895 | **0.8907 ± 0.0048** |
+| Architecture / model | Parameters | AUROC/100k | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
+|---|---:|---:|---:|---:|---:|---:|
+| `engram_hybrid_ecg` | ~258k | 0.346 | 0.8909 | 0.8953 | 0.8925 | 0.8929 ± 0.0022 |
+| `engram_legacy_ecg` | ~174k | 0.512 | 0.8899 | 0.8910 | 0.8925 | 0.8911 ± 0.0013 |
+| `gatedelta_only_ecg` | ~185k | 0.481 | 0.8894 | 0.8910 | 0.8919 | 0.8908 ± 0.0013 |
+| `mamba2_only_ecg` | ~282k | 0.316 | 0.8866 | 0.8961 | 0.8895 | 0.8907 ± 0.0048 |
 
-`engram_hybrid_ecg` is the leading ECG model by mean Macro AUROC and is more
-stable across seeds than `mamba2_only_ecg`. The latter has the highest single
-Seed 1 score, but also the largest seed variance.
+All four variants are **statistically indistinguishable** at 3 seeds (Cohen's d
+< 0.25). The legacy variant is more parameter-efficient (0.512 vs 0.346
+AUROC/100k). ResNet1D baseline (0.9024 val AUROC, 127k params) is numerically
+stronger and more efficient than all ENGRAM variants.
 
 ### Vision — CIFAR-10 test set, accuracy
 
 - **Model:** `engram_image` (Seed 0, 10 epochs)
 - **Overall accuracy:** **72.38%** (7,238 / 10,000)
 
-| Class | Accuracy | Class | Accuracy |
-|---|---:|---|---:|
-| Automobile | 85.70% | Ship | 85.30% |
-| Truck | 82.90% | Frog | 79.90% |
-| Horse | 74.20% | Airplane | 73.80% |
-| Deer | 68.50% | Dog | 65.30% |
-| Bird | 55.90% | Cat | 52.30% |
-
-The strongest classes are Automobile, Ship, and Truck; Cat and Bird are the
-clearest areas for improvement.
+72.38% is below standard baselines (~80%+ for ResNet-18). This validates the
+pipeline but does not support a vision competitiveness claim.
 
 ### Audio — Speech Commands v2 test set
 
 - **Model:** `engram_audio` (Seed 0, 10 epochs)
 - **Test accuracy:** **92.07%** (3,751 / 4,074)
-- **Test cross-entropy loss:** **0.3752**
 
-The complete experiment ledger and the modality-specific interpretation are in
+92.07% is reasonable but comparable to simple CNN baselines (~90%+). An
+`AudioCNNClassifier` baseline is available for comparison.
+
+The complete experiment ledger and honest interpretation are in
 [EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Install
