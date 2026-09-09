@@ -72,9 +72,10 @@ def expert_forward(
 def expert_empty_state(name: str, expert: nn.Module, batch_size: int, device, dtype):
     """Zero-initialised streaming state (spec §3.6)."""
     if name == "swa":
+        st = expert.empty_state(batch_size, device, dtype)
         return SWAState(
-            k=expert.empty_state(batch_size, device, dtype).k,
-            v=expert.empty_state(batch_size, device, dtype).v,
+            k=st.k,
+            v=st.v,
             pos=torch.zeros(batch_size, dtype=torch.long, device=device),
         )
     return expert.empty_state(batch_size, device, dtype)
