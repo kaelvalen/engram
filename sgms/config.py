@@ -43,11 +43,16 @@ class SGMSConfig:
     # Shared expert (§3.7): one SSD instance always on, output added ungated.
     shared_expert: str | None = None  # None | "ssd"
 
-    # Execution semantics (§3.4). D1: decay applies on every step
-    # (default) or the state freezes on a miss. For GDR the spec text
-    # requires exact pass-through on a miss (its equations carry no α gate),
-    # hence a separate default of False for ENGRAM's α forget gate.
-    decay_on_skip: bool = True  # D1, applies to SSD's a_t
+    # Execution semantics (§3.4):
+    # - "dense_masked" (v1): Wall-clock state evolution. Every expert processes
+    #   all T tokens with a write-mask. Under decay_on_skip=True (D1 default),
+    #   recurrent state (SSD a_t) continues decaying on skipped tokens.
+    # - "gathered" (v2): Sparse event-time evolution. Selected tokens are gathered
+    #   and passed only to chosen experts. Recurrent state advances along the
+    #   expert-local sequence (state frozen on skipped intervals).
+    # NOTE: Exact mathematical numerical equivalence between dense and gathered
+    # holds when decay_on_skip=False and gdr_decay_on_skip=False.
+    decay_on_skip: bool = True  # D1, applies to SSD's a_t (wall-clock decay in dense mode)
     gdr_decay_on_skip: bool = False  # applies to GDR's α_t (§3.4 pass-through)
     execution_mode: str = "dense_masked"  # dense_masked (v1) | gathered (v2 sparse)
 

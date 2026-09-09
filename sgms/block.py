@@ -8,8 +8,13 @@ token subsequence, via write-side masking (§3.4).  Outputs combine as
 y_t = Σ_{e ∈ S_t} g_{t,e} · y_{t,e}; the optional shared SSD expert
 (§3.7) is always on and adds its output ungated.
 
-Dense-masking cost note (§3.4): all K experts execute over the full
-sequence - accepted in v1, replaced by gathered execution in v2.
+Dense-masking vs Gathered execution semantics note (§3.4):
+- In dense-masked mode, all K experts execute over the full sequence, with
+  state decaying at every wall-clock step under default decay_on_skip=True.
+- In gathered mode, tokens are dispatched conditionally so only the chosen
+  experts compute on active tokens, operating under expert-local event-time
+  (state frozen across skipped tokens). Numerical equivalence holds when
+  decay_on_skip=False and gdr_decay_on_skip=False.
 """
 
 from __future__ import annotations
