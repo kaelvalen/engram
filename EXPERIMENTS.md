@@ -149,8 +149,51 @@ Last smoke run (2026-09-08, `SEEDS="0 1 2" EPOCHS=10`, logged to
 | small Transformer | 0.8822 ± 0.0016 |
 
 Held-out PTB-XL test fold for the hybrid (best-val checkpoints,
-`infer_ecg.py --ptbxl-test`): **0.8929 ± 0.0023** macro-AUC (seeds
+`infer_ecg.py --ptbxl-test`): **0.8929 ± 0.0022** macro-AUC (seeds
 0.8909 / 0.8953 / 0.8925).
+
+## Official held-out test-set scorecard (RTX 5060, 2026-09-09)
+
+The official test-set inference pass is complete for all three modalities. ECG
+uses three seeds; vision and audio use Seed 0 at 10 epochs. Because the metrics
+are modality-specific, they are not directly comparable as one cross-modal
+ranking.
+
+### ECG — PTB-XL test set, macro AUROC
+
+| Architecture / model | Parameters | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
+|---|---:|---:|---:|---:|---:|
+| `engram_hybrid_ecg` | ~258k | 0.8909 | 0.8953 | 0.8925 | **0.8929 ± 0.0022** |
+| `engram_legacy_ecg` | ~174k | 0.8899 | 0.8910 | 0.8925 | **0.8911 ± 0.0013** |
+| `gatedelta_only_ecg` | ~185k | 0.8894 | 0.8910 | 0.8919 | **0.8908 ± 0.0013** |
+| `mamba2_only_ecg` | ~282k | 0.8866 | 0.8961 | 0.8895 | **0.8907 ± 0.0048** |
+
+`engram_hybrid_ecg` leads by mean Macro AUROC and remains more stable across
+seeds than `mamba2_only_ecg`. The Mamba-2-only model reaches the highest single
+seed score (0.8961) but has the largest seed variance.
+
+### Vision — CIFAR-10 test set, accuracy
+
+**Model:** `engram_image` (Seed 0, 10 epochs)
+**Overall test accuracy:** **72.38%** (7,238 / 10,000)
+
+| Class | Accuracy | Class | Accuracy |
+|---|---:|---|---:|
+| Automobile | 85.70% | Ship | 85.30% |
+| Truck | 82.90% | Frog | 79.90% |
+| Horse | 74.20% | Airplane | 73.80% |
+| Deer | 68.50% | Dog | 65.30% |
+| Bird | 55.90% | Cat | 52.30% |
+
+Automobile, Ship, and Truck are the strongest classes. Cat and Bird are the
+weakest classes in this run.
+
+### Audio — Speech Commands v2 test set
+
+**Model:** `engram_audio` (Seed 0, 10 epochs)
+
+- **Test accuracy:** **92.07%** (3,751 / 4,074)
+- **Test cross-entropy loss:** **0.3752**
 
 ## Honest gaps / TODO before submission
 
@@ -165,8 +208,9 @@ Held-out PTB-XL test fold for the hybrid (best-val checkpoints,
   vocab sizes are exactly 5 / 23 / 44 / 19 / 12 / 71 for superdiag/subdiag/
   diag/form/rhythm/all, and all 21,799 records' SCP codes resolve.
 - **Bootstrap CIs** are implemented (`metrics.bootstrap_auroc_ci`, 1000-resample,
-  matches Strodthoff Table I `0.928(05)` format). Run it on the **test** fold for
-  the final number; the in-training AUROC uses the val fold.
+  matches Strodthoff Table I `0.928(05)` format). The scorecard above reports the
+  completed three-seed test-set mean ± std; bootstrap confidence intervals are
+  not included in that summary yet.
 - **FLA / mamba-ssm numbers** require a GPU; `tests/test_delta_equivalence.py`
   must pass there before trusting `--delta-backend fla`. The `g` argument we pass
   is the **per-step** log-decay (`g_t = log α_t`); the FLA op forms the cumulative

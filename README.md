@@ -47,9 +47,10 @@ The per-layer role tokens are defined in `engram.layer_tokens` as `("s4", "delta
 function; new mixers can be registered with `@register_block("token")` without
 changing the core config or model code.
 
-> **Status (2026-09-08): architecture + training re-validated end-to-end on the
-> RTX 5060 laptop GPU (see the pipeline-validation table below); the full paper
-> matrix is not yet run.** (first validation: 2026-07-18)
+> **Status (2026-09-09): official held-out test-set inference is complete for
+> ECG, vision, and audio on the local RTX 5060 GPU.** The reduced pipeline
+> validation table below is kept separately from the official test-set scorecard.
+> (first validation: 2026-07-18)
 > 270+ tests pass (numerical equivalence, fp64 gradcheck, streaming
 > state-passing, property-based). All six PTB-XL task vocabularies are
 > validated against the real `scp_statements.csv` (5/23/44/19/12/71 classes —
@@ -74,13 +75,58 @@ PTB-XL super-diag, **10 epochs, 3 seeds**, best-val macro-AUROC (mean ± std):
 | small Transformer | 0.8822 ± 0.0016 |
 
 Same protocol on the held-out **PTB-XL test fold** (`infer_ecg.py --ptbxl-test`,
-best-val checkpoints): ENGRAM hybrid **0.8929 ± 0.0023** macro-AUC (seeds
+best-val checkpoints): ENGRAM hybrid **0.8929 ± 0.0022** macro-AUC (seeds
 0.8909 / 0.8953 / 0.8925).
 
 Reproduce with `DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=10 bash scripts/run_benchmarks_laptop.sh`
 then `python scripts/aggregate_results.py output/benchmarks_laptop --metric val_macro_auc`.
 Do not quote these as the paper's main results — they are pipeline validation
 at ~250 K params on a laptop GPU.
+
+## Official test-set scorecard (RTX 5060, 2026-09-09)
+
+All results below are held-out test-set inference results. ECG reports the mean
+and standard deviation across three seeds; the vision and audio runs are Seed 0
+at 10 epochs. Metrics are modality-specific and should not be compared directly
+as a single cross-modal ranking.
+
+### ECG — PTB-XL test set, macro AUROC
+
+| Architecture / model | Parameters | Seed 0 | Seed 1 | Seed 2 | Mean ± std |
+|---|---:|---:|---:|---:|---:|
+| `engram_hybrid_ecg` | ~258k | 0.8909 | 0.8953 | 0.8925 | **0.8929 ± 0.0022** |
+| `engram_legacy_ecg` | ~174k | 0.8899 | 0.8910 | 0.8925 | **0.8911 ± 0.0013** |
+| `gatedelta_only_ecg` | ~185k | 0.8894 | 0.8910 | 0.8919 | **0.8908 ± 0.0013** |
+| `mamba2_only_ecg` | ~282k | 0.8866 | 0.8961 | 0.8895 | **0.8907 ± 0.0048** |
+
+`engram_hybrid_ecg` is the leading ECG model by mean Macro AUROC and is more
+stable across seeds than `mamba2_only_ecg`. The latter has the highest single
+Seed 1 score, but also the largest seed variance.
+
+### Vision — CIFAR-10 test set, accuracy
+
+- **Model:** `engram_image` (Seed 0, 10 epochs)
+- **Overall accuracy:** **72.38%** (7,238 / 10,000)
+
+| Class | Accuracy | Class | Accuracy |
+|---|---:|---|---:|
+| Automobile | 85.70% | Ship | 85.30% |
+| Truck | 82.90% | Frog | 79.90% |
+| Horse | 74.20% | Airplane | 73.80% |
+| Deer | 68.50% | Dog | 65.30% |
+| Bird | 55.90% | Cat | 52.30% |
+
+The strongest classes are Automobile, Ship, and Truck; Cat and Bird are the
+clearest areas for improvement.
+
+### Audio — Speech Commands v2 test set
+
+- **Model:** `engram_audio` (Seed 0, 10 epochs)
+- **Test accuracy:** **92.07%** (3,751 / 4,074)
+- **Test cross-entropy loss:** **0.3752**
+
+The complete experiment ledger and the modality-specific interpretation are in
+[EXPERIMENTS.md](EXPERIMENTS.md).
 
 ## Install
 
