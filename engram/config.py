@@ -59,6 +59,9 @@ class ENGRAMConfig:
     # Delta-rule backend: "reference" (pure-PyTorch chunked solve, always available)
     # or "fla" (flash-linear-attention Triton kernel, GPU-only, falls back if absent).
     delta_backend: str = "reference"
+    # Component ablation toggles for DeltaBlock
+    delta_out_gate: bool = True  # If False, disables multiplicative output gating (o * gate)
+    delta_memoryless: bool = False  # If True, zeroes recurrent memory state (instantaneous linear attention)
 
     # Scan backend for the SSD/S4D linear recurrence:
     #   "auto"      — torch.associative_scan if available, else reference.

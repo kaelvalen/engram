@@ -64,6 +64,8 @@ class GatedDeltaRule(nn.Module):
         chunk_size: int = 64,
         gate_bias_init: float = 4.0,
         backend: str = "reference",
+        out_gate: bool = True,
+        memoryless: bool = False,
     ):
         super().__init__()
         if hidden_dim <= 0 or num_heads <= 0:
@@ -80,6 +82,8 @@ class GatedDeltaRule(nn.Module):
         self.qk_norm = qk_norm
         self.chunk_size = chunk_size
         self.backend = backend
+        self.out_gate = out_gate
+        self.memoryless = memoryless
 
         self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
         self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
@@ -87,7 +91,9 @@ class GatedDeltaRule(nn.Module):
 
         self.alpha_proj = nn.Linear(hidden_dim, num_heads, bias=True)
         self.beta_proj = nn.Linear(hidden_dim, num_heads, bias=True)
-        self.out_gate_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
+        self.out_gate_proj = (
+            nn.Linear(hidden_dim, hidden_dim, bias=False) if out_gate else None
+        )
         self.out_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
         nn.init.constant_(self.alpha_proj.bias, gate_bias_init)
@@ -119,7 +125,9 @@ class GatedDeltaRule(nn.Module):
 
         alpha = torch.sigmoid(self.alpha_proj(x)).transpose(1, 2)  # [B, H, T]
         beta = torch.sigmoid(self.beta_proj(x)).transpose(1, 2)  # [B, H, T]
-        gate = F.silu(self.out_gate_proj(x))  # [B, T, hidden]
+        gate = (
+            F.silu(self.out_gate_proj(x)) if self.out_gate_proj is not None else None
+        )
 
         return q, k, v, alpha, beta, gate
 
@@ -340,7 +348,12 @@ class GatedDeltaRule(nn.Module):
             )
         )
 
-        if T == 1:
+        if self.memoryless:
+            # Memoryless instantaneous attention: S_{t-1} = 0
+            qk = (q * k).sum(dim=-1, keepdim=True)
+            o = beta.unsqueeze(-1) * qk * v
+            S_new = S0
+        elif T == 1:
             o, S_new = self._step_one(q, k, v, alpha, beta, S0)
         elif self.backend == "fla":
             try:
@@ -366,7 +379,8 @@ class GatedDeltaRule(nn.Module):
             o, S_new = self._recurrent_vectorized(q, k, v, alpha, beta, S0, self.chunk_size)
 
         o = o.transpose(1, 2).contiguous().view(B, T, self.hidden_dim)
-        o = o * gate
+        if gate is not None:
+            o = o * gate
         o = self.out_proj(o)
         return o, DeltaState(S=S_new)
 
@@ -385,12 +399,21 @@ class DeltaBlock(nn.Module):
         ffn_expand: int = 2,
         backend: str = "reference",
         dropout: float = 0.0,
+        out_gate: bool = True,
+        memoryless: bool = False,
     ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_dim)
         self.conv = ShortCausalConv1d(hidden_dim, conv_kernel_size)
         self.delta = GatedDeltaRule(
-            hidden_dim, num_heads, qk_norm, chunk_size, gate_bias_init, backend
+            hidden_dim,
+            num_heads,
+            qk_norm,
+            chunk_size,
+            gate_bias_init,
+            backend,
+            out_gate=out_gate,
+            memoryless=memoryless,
         )
         self.norm2 = RMSNorm(hidden_dim)
         self.ffn = SwiGLU(hidden_dim, ffn_expand)

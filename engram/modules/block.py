@@ -263,6 +263,8 @@ def _build_delta(cfg: ENGRAMConfig) -> nn.Module:
         ffn_expand=ffn_exp,
         backend=cfg.delta_backend,
         dropout=cfg.dropout,
+        out_gate=cfg.delta_out_gate,
+        memoryless=cfg.delta_memoryless,
     )
     return _wrap_if_needed(block, cfg)
 
