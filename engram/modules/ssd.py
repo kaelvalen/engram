@@ -42,6 +42,7 @@ class SSDMixer(nn.Module):
         dt_min: float = 0.001,
         dt_max: float = 0.1,
         scan_backend: str = "auto",
+        chunk_size: int = 256,
     ):
         super().__init__()
         if hidden_dim <= 0 or num_heads <= 0:
@@ -61,6 +62,7 @@ class SSDMixer(nn.Module):
                 f"scan_backend must be 'auto', 'assoc', or 'reference', got {scan_backend!r}"
             )
         self.scan_backend = scan_backend
+        self.chunk_size = chunk_size
 
         H, P, N = num_heads, self.head_dim, state_dim
 
@@ -151,32 +153,17 @@ class SSDMixer(nn.Module):
         y = y + self.D.view(1, H, 1) * xv
         return y.reshape(B, self.hidden_dim), h
 
-    def forward(
+    def _forward_scan(
         self,
         x: torch.Tensor,
         state: torch.Tensor | None = None,
         write_mask: torch.Tensor | None = None,
         freeze_on_mask: bool = False,
-    ):
-        """SSD prefill/decode.
-
-        Additive SGMS flags (§3.4): ``write_mask`` [B, T] (or [B, 1] at T==1)
-        zeroes the write term on non-routed steps; ``freeze_on_mask`` also
-        neutralises the decay there (state frozen) instead of applying it
-        (spec D1 ``decay_on_skip`` ablation).  Both default off, preserving
-        the original behaviour.
-        """
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         B, T, _ = x.shape
         H, P, N = self.num_heads, self.head_dim, self.state_dim
 
         h0 = _acc(state) if state is not None else self.empty_state(B, x.device, x.dtype)
-
-        if T == 1:
-            m1 = write_mask[:, 0] if write_mask is not None else None
-            y, h_new = self._step(x[:, 0], h0, m1, freeze_on_mask)
-            y = y.unsqueeze(1)
-            gate = F.silu(self.gate_proj(x))
-            return self.out_proj(y * gate), h_new
 
         xv, Cc, a, dBx = self._project(x, write_mask, freeze_on_mask)
 
@@ -205,7 +192,46 @@ class SSDMixer(nn.Module):
         # [B,T,H,P,N] broadcast product (saves memory on long sequences).
         y = torch.einsum("bthpn,bthn->bthp", h, Cc)  # [B,T,H,P]
         y = y + self.D.view(1, 1, H, 1) * xv
-        y = y.reshape(B, T, self.hidden_dim).to(x.dtype)
+        return y.reshape(B, T, self.hidden_dim).to(x.dtype), h_new
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        state: torch.Tensor | None = None,
+        write_mask: torch.Tensor | None = None,
+        freeze_on_mask: bool = False,
+    ):
+        """SSD prefill/decode.
+
+        Additive SGMS flags (§3.4): ``write_mask`` [B, T] (or [B, 1] at T==1)
+        zeroes the write term on non-routed steps; ``freeze_on_mask`` also
+        neutralises the decay there (state frozen) instead of applying it
+        (spec D1 ``decay_on_skip`` ablation).  Both default off, preserving
+        the original behaviour.
+        """
+        B, T, _ = x.shape
+
+        if T == 1:
+            h0 = _acc(state) if state is not None else self.empty_state(B, x.device, x.dtype)
+            m1 = write_mask[:, 0] if write_mask is not None else None
+            y, h_new = self._step(x[:, 0], h0, m1, freeze_on_mask)
+            y = y.unsqueeze(1)
+            gate = F.silu(self.gate_proj(x))
+            return self.out_proj(y * gate), h_new
+
+        if self.chunk_size is not None and T > self.chunk_size:
+            outs = []
+            h_curr = state
+            for lo in range(0, T, self.chunk_size):
+                hi = min(lo + self.chunk_size, T)
+                x_chunk = x[:, lo:hi]
+                mask_chunk = write_mask[:, lo:hi] if write_mask is not None else None
+                y_chunk, h_curr = self._forward_scan(x_chunk, h_curr, mask_chunk, freeze_on_mask)
+                outs.append(y_chunk)
+            y = torch.cat(outs, dim=1)
+            h_new = h_curr
+        else:
+            y, h_new = self._forward_scan(x, state, write_mask, freeze_on_mask)
 
         gate = F.silu(self.gate_proj(x))
         return self.out_proj(y * gate), h_new
