@@ -30,6 +30,7 @@ class SGMSLM(nn.Module):
         input_ids: torch.Tensor,
         states: ExpertStateDict | None = None,
         knockout: dict[int, set[str]] | None = None,
+        return_routing: bool = True,
     ) -> dict:
         """input_ids: [B, T] long. Returns logits, per-layer routing, states.
 
@@ -39,13 +40,15 @@ class SGMSLM(nn.Module):
         an auxiliary ``pred_loss`` (MSE of each predictor's online head against
         that block's own input, stop-grad) is accumulated and returned in the
         dict - only in training mode, so eval stays clean.
+        Set ``return_routing=False`` during pure inference to omit collecting
+        RoutingOutput structures.
         """
         if input_ids.ndim != 2 or input_ids.shape[1] == 0:
             raise ValueError(f"input_ids must be [B,T] with T>0, got {tuple(input_ids.shape)}")
         if input_ids.dtype != torch.long:
             raise TypeError(f"input_ids must have dtype torch.long, got {input_ids.dtype}")
         h = self.embed(input_ids)
-        routings: list[RoutingOutput] = []
+        routings: list[RoutingOutput] | None = [] if return_routing else None
         new_states = ExpertStateDict()
         pred_loss = torch.zeros((), device=input_ids.device)
         for i, block in enumerate(self.blocks):
@@ -61,7 +64,8 @@ class SGMSLM(nn.Module):
                 pred_loss = pred_loss + F.mse_loss(pl, h.detach())
             h, updates, routing = block(h, states, exclude=exclude)
             new_states.update(updates)
-            routings.append(routing)
+            if return_routing and routings is not None:
+                routings.append(routing)
         logits = self.lm_head(self.norm_f(h))
         return {
             "logits": logits,

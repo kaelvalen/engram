@@ -131,3 +131,18 @@ def test_state_passing_is_exact_at_any_split(T, split_frac, seed):
     y1, st1, _ = block(x[:, :split])
     y2, _, _ = block(x[:, split:], st1)
     torch.testing.assert_close(torch.cat([y1, y2], dim=1), y_full, rtol=1e-9, atol=1e-11)
+
+
+def test_sgmslm_forward_return_routing_flag():
+    from sgms.model import SGMSLM
+
+    model = SGMSLM(_cfg(), vocab_size=32).eval()
+    ids = torch.randint(0, 32, (2, 8))
+    out_default = model(ids)
+    assert out_default["routings"] is not None
+    assert len(out_default["routings"]) == len(model.blocks)
+
+    out_no_routing = model(ids, return_routing=False)
+    assert out_no_routing["routings"] is None
+    assert torch.equal(out_default["logits"], out_no_routing["logits"])
+
