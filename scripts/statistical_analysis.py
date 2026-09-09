@@ -21,7 +21,15 @@ import statistics
 from itertools import combinations
 from pathlib import Path
 
-from aggregate_results import bootstrap_ci, cohens_d, paired_ttest, scan_checkpoints
+from aggregate_results import (
+    bootstrap_ci,
+    classify_evidence_tier,
+    cohens_d,
+    hedges_g,
+    minimum_detectable_effect,
+    paired_ttest,
+    scan_checkpoints,
+)
 
 
 def holm_bonferroni(p_values: list[tuple[str, str, float]]) -> list[tuple[str, str, float, bool]]:
@@ -69,7 +77,7 @@ def main():
     print()
 
     print("## 1. Per-config summary\n")
-    print("| Config | N | Mean | Std | 95% CI | Params | Metric/100k |")
+    print("| Config | N | Mean | Std | Seed-level 95% CI | Params | Metric/100k |")
     print("|---|---|---|---|---|---|---|")
 
     config_summary: dict = {}
@@ -90,7 +98,7 @@ def main():
 
         config_summary[config] = {
             "n": n, "mean": mean, "std": std,
-            "ci_95": [ci_lo, ci_hi], "params": params,
+            "seed_level_ci_95": [ci_lo, ci_hi], "params": params,
             "efficiency": eff, "values": vals,
         }
 
@@ -116,37 +124,48 @@ def main():
             va, vb = vals_a[:n_pairs], vals_b[:n_pairs]
             t_stat, p_val = paired_ttest(va, vb)
             d = cohens_d(va, vb)
+            g = hedges_g(va, vb)
             delta = statistics.mean(va) - statistics.mean(vb)
+
+            diffs = [vai - vbi for vai, vbi in zip(va, vb)]
+            _, diff_ci_lo, diff_ci_hi = bootstrap_ci(diffs)
+            std_a = statistics.stdev(va) if len(va) > 1 else 0.0
+            mde = minimum_detectable_effect(n_pairs, std_a)
+
+            tier_num, tier_label = classify_evidence_tier(
+                delta, g, p_val, diff_ci_lo, diff_ci_hi, mde
+            )
 
             raw_pvals.append((a, b, p_val))
             pairwise_data[f"{a} vs {b}"] = {
                 "delta_mean": delta,
                 "cohens_d": d,
+                "hedges_g": g,
                 "t_stat": t_stat,
                 "p_value_raw": p_val,
+                "evidence_tier": tier_num,
+                "evidence_label": tier_label,
+                "diff_ci_95": [diff_ci_lo, diff_ci_hi],
                 "n_pairs": n_pairs,
             }
 
         # Apply Holm-Bonferroni correction
         corrected = holm_bonferroni(raw_pvals)
 
-        print("| Pair | Δ mean | Cohen's d | t | p (raw) | p (Holm) | Significant? |")
+        print("| Pair | Δ mean | Hedges' g (Cohen's d) | t | p (raw) | p (Holm) | Evidence Tier |")
         print("|---|---|---|---|---|---|---|")
 
         for na, nb, adj_p, sig in corrected:
             key = f"{na} vs {nb}"
             data = pairwise_data[key]
             d = data["cohens_d"]
-            d_label = ""
-            if not math.isnan(d):
-                ad = abs(d)
-                d_label = " neg." if ad < 0.2 else " sm." if ad < 0.5 else " med." if ad < 0.8 else " lg."
+            g = data["hedges_g"]
+            tier_label = data["evidence_label"]
 
-            sig_str = "**YES**" if sig else "no"
             print(
                 f"| {key} | {data['delta_mean']:+.4f} | "
-                f"{d:.2f}{d_label} | {data['t_stat']:.3f} | "
-                f"{data['p_value_raw']:.4f} | {adj_p:.4f} | {sig_str} |"
+                f"{g:.2f} ({d:.2f}) | {data['t_stat']:.3f} | "
+                f"{data['p_value_raw']:.4f} | {adj_p:.4f} | **{tier_label}** |"
             )
             pairwise_data[key]["p_value_holm"] = adj_p
             pairwise_data[key]["significant_holm"] = sig

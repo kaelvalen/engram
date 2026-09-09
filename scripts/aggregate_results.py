@@ -67,6 +67,45 @@ def cohens_d(a: list[float], b: list[float]) -> float:
     return mean_d / std_d
 
 
+def hedges_g(a: list[float], b: list[float]) -> float:
+    """Hedges' g: small-sample bias corrected paired effect size."""
+    d = cohens_d(a, b)
+    n = len(a)
+    if math.isnan(d) or n < 2:
+        return float("nan")
+    df = n - 1
+    if 4 * df <= 1:
+        return d
+    j = 1.0 - (3.0 / (4.0 * df - 1.0))
+    return d * j
+
+
+def classify_evidence_tier(
+    delta_mean: float,
+    g_val: float,
+    p_val: float,
+    ci_lo: float,
+    ci_hi: float,
+    mde: float = float("nan"),
+) -> tuple[int, str]:
+    """Classify comparison into 3 Evidence Tiers:
+    Tier 1 (Significant & Substantial):
+        p < 0.05 and |g| >= 0.5 and CI does not span 0.
+    Tier 2 (Directional Trend / Inconclusive):
+        p >= 0.05 or CI spans 0, but |g| >= 0.2.
+    Tier 3 (Measurement Noise / Practical Equivalence):
+        |g| < 0.2 or |delta| <= MDE.
+    """
+    if not math.isnan(p_val) and p_val < 0.05 and not math.isnan(g_val) and abs(g_val) >= 0.5:
+        if (ci_lo > 0 and ci_hi > 0) or (ci_lo < 0 and ci_hi < 0):
+            return 1, "Tier 1: Significant & Substantial"
+    if not math.isnan(g_val) and abs(g_val) < 0.2:
+        return 3, "Tier 3: Measurement Noise / Equivalence"
+    if not math.isnan(mde) and abs(delta_mean) <= mde:
+        return 3, "Tier 3: Measurement Noise / Equivalence"
+    return 2, "Tier 2: Directional Trend"
+
+
 def paired_ttest(a: list[float], b: list[float]) -> tuple[float, float]:
     """Paired t-test. Returns (t_stat, p_value).
 
@@ -189,7 +228,7 @@ def main():
 
     # ---- Summary table ----
     print(f"\n## Summary — {args.metric}\n")
-    print(f"| Config | Seeds | {args.metric} (mean ± std) | 95% CI | Params | {args.metric}/100k |")
+    print(f"| Config | Seeds | {args.metric} (mean ± std) | Seed-level 95% CI | Params | {args.metric}/100k |")
     print("|---|---|---|---|---|---|")
 
     results_json: dict = {"metric": args.metric, "configs": {}}
@@ -236,7 +275,7 @@ def main():
         ref_vals = by_config[ref]
 
         print(f"\n## Pairwise tests vs reference: `{ref}`\n")
-        print(f"| Config | Δ mean | Cohen's d | t-stat | p-value | Verdict |")
+        print(f"| Config | Δ mean | Hedges' g (Cohen's d) | t-stat | p-value | Evidence Tier |")
         print("|---|---|---|---|---|---|")
 
         pairwise_json: list[dict] = []
@@ -253,29 +292,22 @@ def main():
             a, b = ref_vals[:n_pairs], vals[:n_pairs]
             delta = statistics.mean(a) - statistics.mean(b)
             d = cohens_d(a, b)
+            g = hedges_g(a, b)
             t_stat, p_val = paired_ttest(a, b)
 
-            if p_val < 0.01:
-                verdict = "**significant** (p<0.01)"
-            elif p_val < 0.05:
-                verdict = "*marginal* (p<0.05)"
-            else:
-                verdict = "not significant"
+            # Pairwise difference bootstrap CI
+            diffs = [ai - bi for ai, bi in zip(a, b)]
+            _, diff_ci_lo, diff_ci_hi = bootstrap_ci(diffs)
 
-            d_interp = ""
-            if not math.isnan(d):
-                ad = abs(d)
-                if ad < 0.2:
-                    d_interp = " (negligible)"
-                elif ad < 0.5:
-                    d_interp = " (small)"
-                elif ad < 0.8:
-                    d_interp = " (medium)"
-                else:
-                    d_interp = " (large)"
+            std_ref = statistics.stdev(ref_vals) if len(ref_vals) > 1 else 0.0
+            mde = minimum_detectable_effect(n_pairs, std_ref)
+
+            tier_num, tier_label = classify_evidence_tier(
+                delta, g, p_val, diff_ci_lo, diff_ci_hi, mde
+            )
 
             print(
-                f"| {config} | {delta:+.4f} | {d:.2f}{d_interp} | {t_stat:.3f} | {p_val:.4f} | {verdict} |"
+                f"| {config} | {delta:+.4f} | {g:.2f} ({d:.2f}) | {t_stat:.3f} | {p_val:.4f} | **{tier_label}** |"
             )
 
             pairwise_json.append({
@@ -283,8 +315,12 @@ def main():
                 "vs": ref,
                 "delta_mean": delta,
                 "cohens_d": d,
+                "hedges_g": g,
                 "t_stat": t_stat,
                 "p_value": p_val,
+                "evidence_tier": tier_num,
+                "evidence_label": tier_label,
+                "diff_ci_95": [diff_ci_lo, diff_ci_hi],
                 "n_pairs": n_pairs,
             })
 
