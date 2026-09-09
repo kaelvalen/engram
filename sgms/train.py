@@ -25,7 +25,7 @@ import yaml
 from .baselines import build_model
 from .config import SGMSConfig
 from .losses import sgms_auxiliary_loss
-from .router import routing_stats
+from .router import RoutingOutput, routing_stats
 from .tasks.mqar import MQARConfig, make_mqar_batch
 
 
@@ -48,7 +48,8 @@ def evaluate(
     seed: int,
     device="cpu",
     chunk_len: int = 512,
-) -> float:
+    return_routings: bool = False,
+) -> float | tuple[float, list[RoutingOutput] | None]:
     """Recall accuracy at scored (post-query) positions on a fixed batch.
 
     Long contexts are evaluated through the streaming state hand-off
@@ -63,26 +64,54 @@ def evaluate(
     if task_cfg.seq_len > 1024:
         chunk = min(chunk, 256)
     eval_batch = max(1, min(batch_size, max(1, 512 // chunk)))
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
     ids, labels = make_mqar_batch(task_cfg, eval_batch, g, device)
+    collected_routings = None
     with torch.no_grad():
         if ids.shape[1] <= chunk:
-            logits = model(ids)["logits"]
+            out = model(ids)
+            logits = out["logits"]
+            collected_routings = out.get("routings")
         else:
             outs = []
             states = None
+            chunk_routings = []
             for lo in range(0, ids.shape[1], chunk):
                 out = model(ids[:, lo : lo + chunk], states)
                 outs.append(out["logits"])
                 states = out["states"]
+                if return_routings and "routings" in out and out["routings"] is not None:
+                    chunk_routings.append(out["routings"])
             logits = torch.cat(outs, dim=1)
+            if chunk_routings:
+                num_layers = len(chunk_routings[0])
+                collected_routings = []
+                for l in range(num_layers):
+                    layer_cr = [cr[l] for cr in chunk_routings]
+                    gates = torch.cat([r.gates for r in layer_cr], dim=1)
+                    mask = torch.cat([r.mask for r in layer_cr], dim=1)
+                    indices = torch.cat([r.indices for r in layer_cr], dim=1)
+                    logits_cat = (
+                        torch.cat([r.logits for r in layer_cr], dim=1)
+                        if layer_cr[0].logits is not None
+                        else None
+                    )
+                    probs_cat = (
+                        torch.cat([r.probs for r in layer_cr], dim=1)
+                        if layer_cr[0].probs is not None
+                        else None
+                    )
+                    collected_routings.append(
+                        RoutingOutput(gates, mask, indices, logits_cat, probs_cat)
+                    )
     # logits[t] predicts token t+1: compare against labels shifted by one.
     pred = logits[:, :-1].argmax(-1)
     tgt = labels[:, 1:]
     scored = tgt != -100
     model.train()
-    return float((pred[scored] == tgt[scored]).float().mean())
+    acc = float((pred[scored] == tgt[scored]).float().mean())
+    if return_routings:
+        return acc, collected_routings
+    return acc
 
 
 def _routing_log(routings, prev_indices: list | None) -> tuple[dict, list]:
@@ -141,11 +170,11 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
                 loss = task_loss + aux
                 if cfg.use_surprise_predictor:
                     loss = loss + cfg.surprise_pred_loss_weight * out["pred_loss"]
-                bal, z = float(parts["bal"]), float(parts["z"])
+                bal, z = parts["bal"], parts["z"]
             else:
                 loss = task_loss
                 bal = z = 0.0
-        opt.zero_grad()
+        opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(params, optim["grad_clip"])
         opt.step()
@@ -157,28 +186,45 @@ def train_one(config: dict, seed: int, device: str = "cpu") -> dict:
 
         record = {
             "step": step,
-            "task_loss": float(task_loss.detach()),
+            "task_loss": task_loss.detach(),
             "bal": bal,
             "z": z,
             "lr": lr,
         }
         if (step + 1) % eval_every == 0 or step == steps - 1:
-            record["accuracy"] = evaluate(
-                model, task_cfg, optim["batch_size"], seed=999, device=device
-            )
             if is_sgms:
-                with torch.no_grad():
-                    eval_ids, _ = make_mqar_batch(
-                        task_cfg, optim["batch_size"], torch.Generator().manual_seed(999), device
-                    )
-                    eval_out = model(eval_ids)
-                stats, prev_indices = _routing_log(eval_out["routings"], prev_indices)
-                record.update(stats)
+                eval_acc, routings = evaluate(
+                    model,
+                    task_cfg,
+                    optim["batch_size"],
+                    seed=999,
+                    device=device,
+                    return_routings=True,
+                )
+                record["accuracy"] = eval_acc
+                if routings is not None:
+                    stats, prev_indices = _routing_log(routings, prev_indices)
+                    record.update(stats)
             else:
                 # baselines carry no router: keep the log schema consistent
+                record["accuracy"] = evaluate(
+                    model, task_cfg, optim["batch_size"], seed=999, device=device
+                )
                 record["layers"] = []
                 record["min_utilization"] = None
         history.append(record)
+
+    loss_tensors = [
+        rec["task_loss"] for rec in history if isinstance(rec["task_loss"], torch.Tensor)
+    ]
+    if loss_tensors:
+        loss_floats = torch.stack(loss_tensors).cpu().tolist()
+        for idx, rec in enumerate(history):
+            rec["task_loss"] = loss_floats[idx]
+            if isinstance(rec["bal"], torch.Tensor):
+                rec["bal"] = float(rec["bal"])
+            if isinstance(rec["z"], torch.Tensor):
+                rec["z"] = float(rec["z"])
 
     summary = {
         "seed": seed,
