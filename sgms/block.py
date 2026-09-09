@@ -24,7 +24,7 @@ from .config import SGMSConfig
 from .masking import combine_expert_outputs
 from .registry import build_expert, expert_empty_state, expert_forward
 from .router import RoutingOutput, TokenRouter
-from .state import CONV_KEY, SHARED_KEY, ExpertStateDict
+from .state import CONV_KEY, SHARED_KEY, ExpertStateDict, cat_expert_states, slice_expert_state
 from .surprise import SurprisePredictor
 
 
@@ -112,18 +112,29 @@ class SGMSBlock(nn.Module):
         if self.cfg.execution_mode == "gathered":
             B, _, _ = x_c.shape
             y = torch.zeros_like(x_c)
-            for b in range(B):
-                for e, (name, expert) in enumerate(self.experts.items()):
-                    st_in = states.get((i, name)) if states is not None else None
-                    active_idx = torch.nonzero(routing.mask[b, :, e] > 0.5, as_tuple=True)[0]
+            for e, (name, expert) in enumerate(self.experts.items()):
+                st_in = states.get((i, name)) if states is not None else None
+                st_out_list = []
+                for b in range(B):
+                    st_in_b = slice_expert_state(st_in, b)
+                    m_b = routing.mask[b, :, e] > 0.5
+                    active_idx = torch.where(m_b)[0]
                     if active_idx.numel() > 0:
                         x_sub = x_c[b : b + 1, active_idx]
-                        y_sub, st_out = expert_forward(name, expert, x_sub, st_in, None, self.cfg)
-                        updates[(i, name)] = st_out
+                        y_sub, st_out_b = expert_forward(
+                            name, expert, x_sub, st_in_b, None, self.cfg
+                        )
                         gate_sub = routing.gates[b : b + 1, active_idx, e : e + 1]
                         y[b, active_idx] += (y_sub * gate_sub).squeeze(0)
+                        st_out_list.append(st_out_b)
                     else:
-                        updates[(i, name)] = st_in
+                        if st_in_b is not None:
+                            st_out_list.append(st_in_b)
+                        else:
+                            st_out_list.append(
+                                expert_empty_state(name, expert, 1, x_c.device, x_c.dtype)
+                            )
+                updates[(i, name)] = cat_expert_states(st_out_list)
         else:
             outs = []
             for e, (name, expert) in enumerate(self.experts.items()):
