@@ -56,7 +56,7 @@ class CompactConvNet2D(nn.Module):
         self,
         in_channels: int = 3,
         num_classes: int = 10,
-        channels: tuple[int, ...] = (32, 64, 96, 128),
+        channels: tuple[int, ...] = (32, 48, 64, 96),
         patch_size: int = 4,
     ):
         super().__init__()
