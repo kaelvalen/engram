@@ -106,11 +106,21 @@ def evaluate_baseline_auc(model, loader, device, multilabel: bool):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["resnet1d", "transformer", "audio_cnn"], default="resnet1d")
+    parser.add_argument(
+        "--model",
+        choices=["resnet1d", "transformer", "audio_cnn", "compact_cnn2d"],
+        default="resnet1d",
+    )
     parser.add_argument("--task", choices=["ecg", "image", "audio"], default="image")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument(
+        "--base-channels",
+        type=int,
+        default=None,
+        help="Base channels for CNN baselines (e.g. 92 for ResNet1D-Wide ~254k, 44 for AudioCNN ~250k)",
+    )
     parser.add_argument(
         "--data-root",
         type=str,
@@ -155,12 +165,25 @@ def main() -> None:
         if args.task != "ecg":
             print("resnet1d is intended for ECG [B,T,C]. Use --task ecg.", file=sys.stderr)
             sys.exit(1)
-        model = ResNet1DClassifier(in_channels=in_dim, num_classes=n_cls).to(device)
+        kwargs = {"base_channels": args.base_channels} if args.base_channels else {}
+        model = ResNet1DClassifier(in_channels=in_dim, num_classes=n_cls, **kwargs).to(device)
     elif args.model == "audio_cnn":
         if args.task != "audio":
             print("audio_cnn is intended for audio. Use --task audio.", file=sys.stderr)
             sys.exit(1)
-        model = AudioCNNClassifier(input_dim=in_dim, num_classes=n_cls).to(device)
+        kwargs = {"base_channels": args.base_channels} if args.base_channels else {}
+        model = AudioCNNClassifier(input_dim=in_dim, num_classes=n_cls, **kwargs).to(device)
+    elif args.model == "compact_cnn2d":
+        if args.task != "image":
+            print("compact_cnn2d is intended for image. Use --task image.", file=sys.stderr)
+            sys.exit(1)
+        from engram.baselines import CompactConvNet2D
+
+        model = CompactConvNet2D(
+            in_channels=3,
+            num_classes=n_cls,
+            patch_size=args.patch_size,
+        ).to(device)
     else:
         model = TransformerSequenceClassifier(
             input_dim=in_dim, num_classes=n_cls, d_model=256, num_layers=4
