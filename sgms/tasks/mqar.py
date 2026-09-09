@@ -53,23 +53,25 @@ def make_mqar_batch(
 
     ids = torch.full((batch_size, cfg.seq_len), filler, dtype=torch.long)
     labels = torch.full((batch_size, cfg.seq_len), -100, dtype=torch.long)
-    classes = torch.zeros(batch_size, cfg.seq_len, dtype=torch.long)
+    classes = torch.zeros(batch_size, cfg.seq_len, dtype=torch.long) if return_classes else None
     for b in range(batch_size):
         keys = torch.randperm(pool, generator=generator)[:n]
         values = torch.randint(0, pool, (n,), generator=generator)
         kv = torch.stack([keys, values], dim=1).flatten()  # k1 v1 k2 v2 …
         ids[b, : 2 * n] = kv
-        classes[b, 0 : 2 * n : 2] = 1
-        classes[b, 1 : 2 * n : 2] = 2
+        if return_classes and classes is not None:
+            classes[b, 0 : 2 * n : 2] = 1
+            classes[b, 1 : 2 * n : 2] = 2
 
         order = torch.randperm(n, generator=generator)
         queries = keys[order]
         q_start = 2 * n + gap
         ids[b, q_start : q_start + n] = queries
-        classes[b, q_start : q_start + n] = 3
+        if return_classes and classes is not None:
+            classes[b, q_start : q_start + n] = 3
         # label[p] is the target for the prediction made at p-1 (the query).
         labels[b, q_start + 1 : q_start + n + 1] = values[order]
-    ids, labels, classes = ids.to(device), labels.to(device), classes.to(device)
-    if return_classes:
-        return ids, labels, classes
+    ids, labels = ids.to(device), labels.to(device)
+    if return_classes and classes is not None:
+        return ids, labels, classes.to(device)
     return ids, labels
