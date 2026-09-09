@@ -32,7 +32,7 @@ from sgms import SGMSBlock, SGMSConfig  # noqa: E402
 
 
 def build_models(
-    dim: int, heads: int, state_dim: int, top_k: int, device: str
+    dim: int, heads: int, state_dim: int, top_k: int, device: str, dtype: torch.dtype = torch.float32
 ) -> dict[str, torch.nn.Module]:
     """Instantiate the 4 comparison models."""
     cfg_dense = SGMSConfig(
@@ -45,7 +45,7 @@ def build_models(
         decay_on_skip=False,
         gdr_decay_on_skip=False,
     )
-    dense_sgms = SGMSBlock(cfg_dense, layer_idx=0).to(device).eval()
+    dense_sgms = SGMSBlock(cfg_dense, layer_idx=0).to(device=device, dtype=dtype).eval()
 
     cfg_gathered = SGMSConfig(
         hidden_dim=dim,
@@ -57,10 +57,18 @@ def build_models(
         decay_on_skip=False,
         gdr_decay_on_skip=False,
     )
-    gathered_sgms = SGMSBlock(cfg_gathered, layer_idx=0).to(device).eval()
+    gathered_sgms = SGMSBlock(cfg_gathered, layer_idx=0).to(device=device, dtype=dtype).eval()
 
-    pure_ssd = SSDMixer(hidden_dim=dim, num_heads=heads, state_dim=state_dim).to(device).eval()
-    pure_gdr = GatedDeltaRule(hidden_dim=dim, num_heads=heads, backend="auto").to(device).eval()
+    pure_ssd = (
+        SSDMixer(hidden_dim=dim, num_heads=heads, state_dim=state_dim)
+        .to(device=device, dtype=dtype)
+        .eval()
+    )
+    pure_gdr = (
+        GatedDeltaRule(hidden_dim=dim, num_heads=heads, backend="auto")
+        .to(device=device, dtype=dtype)
+        .eval()
+    )
 
     return {
         "Dense Masked SGMS": dense_sgms,
@@ -117,18 +125,24 @@ def run_benchmarks(args: argparse.Namespace) -> dict:
     device = args.device
     is_cuda = torch.device(device).type == "cuda"
     seq_lens = [int(s.strip()) for s in args.seq_lens.split(",") if s.strip()]
+    dtype_map = {
+        "float32": torch.float32,
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+    }
+    dtype = dtype_map[args.dtype]
 
     print(f"=== SGMS Conditional Compute Benchmark ===")
-    print(f"Device: {device} | PyTorch: {torch.__version__}")
+    print(f"Device: {device} | PyTorch: {torch.__version__} | Dtype: {args.dtype}")
     print(f"Batch: {args.batch_size} | Dim: {args.dim} | Heads: {args.heads} | State Dim: {args.state_dim}")
     print(f"Sequences: {seq_lens} | Top-k: {args.top_k} | Warmup: {args.warmup} | Runs: {args.runs}\n")
 
-    models = build_models(args.dim, args.heads, args.state_dim, args.top_k, device)
+    models = build_models(args.dim, args.heads, args.state_dim, args.top_k, device, dtype=dtype)
     all_results = {}
 
     for t_len in seq_lens:
         print(f"--- Sequence Length T = {t_len} ---")
-        x = torch.randn(args.batch_size, t_len, args.dim, device=device)
+        x = torch.randn(args.batch_size, t_len, args.dim, device=device, dtype=dtype)
         t_results = {}
 
         for name, model in models.items():
@@ -165,6 +179,13 @@ def run_benchmarks(args: argparse.Namespace) -> dict:
 def main():
     p = argparse.ArgumentParser(description="Benchmark conditional compute wall-clock performance and peak memory.")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Device (cpu or cuda)")
+    p.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float32",
+        choices=["float32", "bfloat16", "float16"],
+        help="Data type for activations and parameters",
+    )
     p.add_argument("--batch-size", type=int, default=4, help="Batch size B")
     p.add_argument("--seq-lens", type=str, default="256,1024,4096", help="Comma-separated sequence lengths T")
     p.add_argument("--dim", type=int, default=256, help="Hidden dimension D")
