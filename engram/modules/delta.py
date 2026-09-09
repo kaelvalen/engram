@@ -91,9 +91,7 @@ class GatedDeltaRule(nn.Module):
 
         self.alpha_proj = nn.Linear(hidden_dim, num_heads, bias=True)
         self.beta_proj = nn.Linear(hidden_dim, num_heads, bias=True)
-        self.out_gate_proj = (
-            nn.Linear(hidden_dim, hidden_dim, bias=False) if out_gate else None
-        )
+        self.out_gate_proj = nn.Linear(hidden_dim, hidden_dim, bias=False) if out_gate else None
         self.out_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
 
         nn.init.constant_(self.alpha_proj.bias, gate_bias_init)
@@ -125,9 +123,7 @@ class GatedDeltaRule(nn.Module):
 
         alpha = torch.sigmoid(self.alpha_proj(x)).transpose(1, 2)  # [B, H, T]
         beta = torch.sigmoid(self.beta_proj(x)).transpose(1, 2)  # [B, H, T]
-        gate = (
-            F.silu(self.out_gate_proj(x)) if self.out_gate_proj is not None else None
-        )
+        gate = F.silu(self.out_gate_proj(x)) if self.out_gate_proj is not None else None
 
         return q, k, v, alpha, beta, gate
 

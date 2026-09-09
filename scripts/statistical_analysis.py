@@ -97,14 +97,17 @@ def main():
         print(f"| {config} | {n} | {mean:.4f} | {std:.4f} | {ci_str} | {params_str} | {eff_str} |")
 
         config_summary[config] = {
-            "n": n, "mean": mean, "std": std,
-            "seed_level_ci_95": [ci_lo, ci_hi], "params": params,
-            "efficiency": eff, "values": vals,
+            "n": n,
+            "mean": mean,
+            "std": std,
+            "seed_level_ci_95": [ci_lo, ci_hi],
+            "params": params,
+            "efficiency": eff,
+            "values": vals,
         }
 
     report["config_summary"] = {
-        k: {kk: vv for kk, vv in v.items() if kk != "values"}
-        for k, v in config_summary.items()
+        k: {kk: vv for kk, vv in v.items() if kk != "values"} for k, v in config_summary.items()
     }
 
     # ---- 2. Pairwise t-test matrix ----
@@ -186,9 +189,7 @@ def main():
         # MDE ≈ (z_α/2 + z_β) * σ / √n
         if n >= 2 and std > 0:
             mde = (1.96 + 0.84) * std / math.sqrt(n)
-            interp = (
-                f"Cannot detect differences < {mde:.4f} with {n} seeds"
-            )
+            interp = f"Cannot detect differences < {mde:.4f} with {n} seeds"
         else:
             mde = float("nan")
             interp = "Need ≥ 2 seeds with nonzero variance"
@@ -204,9 +205,7 @@ def main():
         if config_summary[config]["params"]
     ]
     if ranked:
-        ranked.sort(
-            key=lambda x: x[1] / (x[2] / 100_000) if x[2] else 0, reverse=True
-        )
+        ranked.sort(key=lambda x: x[1] / (x[2] / 100_000) if x[2] else 0, reverse=True)
         print(f"| Rank | Config | {args.metric} | Params | {args.metric}/100k params |")
         print("|---|---|---|---|---|")
         for i, (config, mean, params) in enumerate(ranked, 1):
@@ -217,20 +216,19 @@ def main():
     print("\n## 5. Verdict\n")
     # Check if any pairwise differences are significant
     if len(configs) > 1:
-        any_sig = any(
-            v.get("significant_holm", False)
-            for v in pairwise_data.values()
-        )
+        any_sig = any(v.get("significant_holm", False) for v in pairwise_data.values())
         if any_sig:
-            print("Some pairwise differences are statistically significant after Holm-Bonferroni correction.")
+            print(
+                "Some pairwise differences are statistically significant after Holm-Bonferroni correction."
+            )
             print("See the pairwise table above for details.")
         else:
             print("> **All pairwise differences are NOT statistically significant** after")
             print("> Holm-Bonferroni correction. The models are indistinguishable at the")
             print(f"> current seed count (N={min(len(v) for v in by_config.values())}).")
             print(">")
-            print("> Honest claim: \"The architectures perform within measurement noise of")
-            print("> each other; the hybrid variant shows lower seed variance.\"")
+            print('> Honest claim: "The architectures perform within measurement noise of')
+            print('> each other; the hybrid variant shows lower seed variance."')
 
     # ---- JSON output ----
     if args.output:
@@ -240,9 +238,7 @@ def main():
                 return str(obj)
             return obj
 
-        Path(args.output).write_text(
-            json.dumps(report, indent=2, default=clean)
-        )
+        Path(args.output).write_text(json.dumps(report, indent=2, default=clean))
         print(f"\nFull report written to {args.output}")
 
 

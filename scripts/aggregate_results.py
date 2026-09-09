@@ -23,10 +23,10 @@ from pathlib import Path
 
 import torch
 
-
 # ---------------------------------------------------------------------------
 # Bootstrap CI
 # ---------------------------------------------------------------------------
+
 
 def bootstrap_ci(
     values: list[float],
@@ -41,9 +41,7 @@ def bootstrap_ci(
         return float("nan"), float("nan"), float("nan")
     if n == 1:
         return values[0], values[0], values[0]
-    means = sorted(
-        statistics.mean(rng.choices(values, k=n)) for _ in range(n_resamples)
-    )
+    means = sorted(statistics.mean(rng.choices(values, k=n)) for _ in range(n_resamples))
     lo_q = (1 - ci) / 2
     hi_q = 1 - lo_q
     lo = means[max(0, int(lo_q * len(means)))]
@@ -54,6 +52,7 @@ def bootstrap_ci(
 # ---------------------------------------------------------------------------
 # Statistical helpers
 # ---------------------------------------------------------------------------
+
 
 def cohens_d(a: list[float], b: list[float]) -> float:
     """Cohen's d for paired samples."""
@@ -115,6 +114,7 @@ def paired_ttest(a: list[float], b: list[float]) -> tuple[float, float]:
         return float("nan"), float("nan")
     try:
         from scipy.stats import ttest_rel
+
         res = ttest_rel(a, b)
         return float(res.statistic), float(res.pvalue)
     except ImportError:
@@ -133,6 +133,7 @@ def paired_ttest(a: list[float], b: list[float]) -> tuple[float, float]:
     df = n - 1
     try:
         from scipy.stats import t as t_dist
+
         p_value = 2 * (1 - t_dist.cdf(abs(t_stat), df))
     except ImportError:
         # Very rough approximation for df >= 2
@@ -146,7 +147,9 @@ def _normal_cdf(x: float) -> float:
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-def minimum_detectable_effect(n_seeds: int, std: float, alpha: float = 0.05, power: float = 0.8) -> float:
+def minimum_detectable_effect(
+    n_seeds: int, std: float, alpha: float = 0.05, power: float = 0.8
+) -> float:
     """Approximate MDE for a paired t-test (two-tailed)."""
     if n_seeds < 2 or std <= 0:
         return float("nan")
@@ -159,6 +162,7 @@ def minimum_detectable_effect(n_seeds: int, std: float, alpha: float = 0.05, pow
 # ---------------------------------------------------------------------------
 # Checkpoint scanning
 # ---------------------------------------------------------------------------
+
 
 def scan_checkpoints(
     root: Path, metric: str
@@ -180,8 +184,7 @@ def scan_checkpoints(
                 model_state = ckpt.get("model_state", ckpt.get("model", {}))
                 if model_state:
                     total_params = sum(
-                        v.numel() for v in model_state.values()
-                        if isinstance(v, torch.Tensor)
+                        v.numel() for v in model_state.values() if isinstance(v, torch.Tensor)
                     )
                     param_counts[config] = total_params if total_params > 0 else None
                 else:
@@ -195,6 +198,7 @@ def scan_checkpoints(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     p = argparse.ArgumentParser()
@@ -228,7 +232,9 @@ def main():
 
     # ---- Summary table ----
     print(f"\n## Summary - {args.metric}\n")
-    print(f"| Config | Seeds | {args.metric} (mean ± std) | Seed-level 95% CI | Params | {args.metric}/100k |")
+    print(
+        f"| Config | Seeds | {args.metric} (mean ± std) | Seed-level 95% CI | Params | {args.metric}/100k |"
+    )
     print("|---|---|---|---|---|---|")
 
     results_json: dict = {"metric": args.metric, "configs": {}}
@@ -275,7 +281,7 @@ def main():
         ref_vals = by_config[ref]
 
         print(f"\n## Pairwise tests vs reference: `{ref}`\n")
-        print(f"| Config | Δ mean | Hedges' g (Cohen's d) | t-stat | p-value | Evidence Tier |")
+        print("| Config | Δ mean | Hedges' g (Cohen's d) | t-stat | p-value | Evidence Tier |")
         print("|---|---|---|---|---|---|")
 
         pairwise_json: list[dict] = []
@@ -310,26 +316,28 @@ def main():
                 f"| {config} | {delta:+.4f} | {g:.2f} ({d:.2f}) | {t_stat:.3f} | {p_val:.4f} | **{tier_label}** |"
             )
 
-            pairwise_json.append({
-                "config": config,
-                "vs": ref,
-                "delta_mean": delta,
-                "cohens_d": d,
-                "hedges_g": g,
-                "t_stat": t_stat,
-                "p_value": p_val,
-                "evidence_tier": tier_num,
-                "evidence_label": tier_label,
-                "diff_ci_95": [diff_ci_lo, diff_ci_hi],
-                "n_pairs": n_pairs,
-            })
+            pairwise_json.append(
+                {
+                    "config": config,
+                    "vs": ref,
+                    "delta_mean": delta,
+                    "cohens_d": d,
+                    "hedges_g": g,
+                    "t_stat": t_stat,
+                    "p_value": p_val,
+                    "evidence_tier": tier_num,
+                    "evidence_label": tier_label,
+                    "diff_ci_95": [diff_ci_lo, diff_ci_hi],
+                    "n_pairs": n_pairs,
+                }
+            )
 
         results_json["pairwise_tests"] = pairwise_json
         results_json["reference"] = ref
 
         # ---- Power analysis ----
-        print(f"\n## Power analysis (α=0.05, power=0.80)\n")
-        print(f"| Config | seeds | pooled std | MDE |")
+        print("\n## Power analysis (α=0.05, power=0.80)\n")
+        print("| Config | seeds | pooled std | MDE |")
         print("|---|---|---|---|")
         for config in configs:
             vals = by_config[config]

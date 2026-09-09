@@ -5,7 +5,6 @@ from engram.baselines import (
     AudioCNNClassifier,
     CompactConvNet2D,
     ResNet1DClassifier,
-    TransformerSequenceClassifier,
 )
 
 

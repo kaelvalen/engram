@@ -10,7 +10,9 @@ import torch
 import torch.nn as nn
 
 
-def _unpatchify(x: torch.Tensor, patch_size: int = 4, img_size: int = 32, in_ch: int = 3) -> torch.Tensor:
+def _unpatchify(
+    x: torch.Tensor, patch_size: int = 4, img_size: int = 32, in_ch: int = 3
+) -> torch.Tensor:
     """Convert [B, num_patches, patch_size*patch_size*in_ch] -> [B, in_ch, img_size, img_size]."""
     if x.ndim == 4:
         return x
