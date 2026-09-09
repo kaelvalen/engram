@@ -20,9 +20,13 @@ attention. We contribute (i) a from-scratch, pure-PyTorch reference
 implementation of the SSD scan and the chunked gated delta rule, with
 numerical-equivalence tests against `torch.associative_scan` (verified on CPU)
 and the FLA Triton kernels (gated by a GPU test — `[TODO: confirm pass before
-claiming FLA equivalence]`); and (ii) a cross-modal portability study. `[TODO: headline result —
-e.g. "ENGRAM matches xresnet1d101 within bootstrap CI on PTB-XL super-diagnostic
-(0.9XX vs 0.928 macro AUC) while reusing the same backbone on audio and vision".]`
+claiming FLA equivalence]`); and (ii) a cross-modal portability study with
+statistical rigor (paired t-tests, Holm-Bonferroni correction, power analysis,
+and parameter-efficiency metrics). `[TODO: headline result — e.g. "The four
+ENGRAM variants are statistically indistinguishable on PTB-XL (p > 0.7,
+Cohen's d < 0.25, 3 seeds); the task-specific ResNet1D baseline is numerically
+stronger with 2× fewer parameters, but the hybrid backbone ports across all
+three modalities without architectural changes."]`
 
 ## 1. Introduction
 
@@ -112,13 +116,37 @@ sCIFAR-10, Speech Commands).
 `torch.compile`; delta rule: reference vs FLA — across state dims N∈{16,64,128}.
 Report on our own GPU (do not quote others' H100 numbers).
 
+**Component ablation.** `[TODO: run scripts/run_component_ablation.sh]`
+- Conv bypass (conv_kernel_size=0) vs full model.
+- FFN bypass (ffn_expand=0) vs full model.
+- Both bypassed: pure mixer backbone.
+- Mean pooling vs last-token pooling.
+- Dropout 0 / 0.1 / 0.2.
+
+This table answers "which components of the hybrid are actually load-bearing?"
+— a question the architecture-level ablations (SSD-only vs delta-only vs hybrid)
+cannot answer.
+
+**Parameter efficiency.** Report AUROC/100k-params alongside raw AUROC to
+account for the systematic confound that hybrid models have 48% more parameters
+than the legacy variant. A task-specific CNN (ResNet1D, 127k params) may achieve
+higher AUROC with far fewer parameters; the claim is portability, not per-param
+efficiency.
+
 ## 5. Discussion & Limitations
 
 Be explicit and honest: (i) ENGRAM is *modality-portable* (same arch + HPs,
-separate runs), not yet a single-set-of-weights joint model; (ii) `[TODO: state
-which PTB-XL tasks we do/do not match within CI]`; (iii) the full 6-task
-multi-label PTB-XL table and bootstrap CIs are `[TODO]`; (iv) we use Mamba-2 SSD
-(stable) and cite Mamba-3 as future work.
+separate runs), not yet a single-set-of-weights joint model; (ii) all ENGRAM
+variants may be statistically indistinguishable from each other — the claim is
+*not* that the hybrid is best, but that hybrid linear-recurrent backbones
+*port* across modalities; (iii) task-specific baselines (e.g. ResNet1D on
+PTB-XL) are likely more parameter-efficient; the hybrid's advantage is
+architectural reuse, not per-task performance; (iv) `[TODO: state which PTB-XL
+tasks we do/do not match within CI]`; (v) the full 6-task multi-label PTB-XL
+table and bootstrap CIs are `[TODO]`; (vi) we use Mamba-2 SSD (stable) and
+cite Mamba-3 as future work; (vii) with ≤3 seeds, paired differences of
+< 0.003 AUROC are below the MDE — more seeds or a different evaluation design
+(e.g. cross-validation) would be needed to resolve such differences.
 
 ## 6. Reproducibility
 
