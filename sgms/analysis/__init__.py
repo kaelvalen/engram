@@ -15,7 +15,7 @@ import torch
 
 from .composition import composition_summary, reference_composition, time_averaged_utilization
 from .dynamics import dynamics_summary
-from .heatmaps import heatmap_utilization, routing_assignments
+from .heatmaps import assignments_from_routings, heatmap_utilization, routing_assignments
 from .knockout import knockout_evaluation, mqar_accuracy_metric
 from .specialization import mutual_information, specialization_score
 
@@ -23,6 +23,7 @@ REPORT_VERSION = 1
 
 __all__ = [
     "REPORT_VERSION",
+    "assignments_from_routings",
     "composition_summary",
     "dynamics_summary",
     "generate_report",
@@ -57,7 +58,7 @@ def generate_report(
     routings = out["routings"]
 
     # §7.1 heatmaps
-    assignments = routing_assignments(model, ids)  # (L, B, T)
+    assignments = assignments_from_routings(routings)  # (L, B, T)
     np.save(out_dir / "routing_heatmaps.npy", assignments)
 
     # §7.2 specialization (needs token classes, e.g. MQAR key/value/query/filler)
