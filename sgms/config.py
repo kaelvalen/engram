@@ -63,7 +63,7 @@ class SGMSConfig:
     qk_norm: bool = True
     gate_bias_init: float = 4.0
     scan_backend: str = "auto"
-    delta_backend: str = "reference"
+    delta_backend: str = "auto"
     swa_window: int = 512
 
     # Shared block anatomy (ENGRAM-exact residual/pre-norm structure, §3.5)
@@ -108,6 +108,8 @@ class SGMSConfig:
             raise ValueError("dropout must be in [0, 1)")
         if self.lambda_bal < 0 or self.lambda_z < 0:
             raise ValueError("loss weights must be non-negative")
+        if self.delta_backend not in ("reference", "fla", "auto"):
+            raise ValueError(f"unknown delta_backend: {self.delta_backend!r}")
         if self.router_surprise_scale < 0:
             raise ValueError("router_surprise_scale must be non-negative")
         if (

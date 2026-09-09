@@ -56,9 +56,9 @@ class ENGRAMConfig:
     delta_chunk_size: int = 64
     qk_norm: bool = True
     gate_bias_init: float = 4.0
-    # Delta-rule backend: "reference" (pure-PyTorch chunked solve, always available)
-    # or "fla" (flash-linear-attention Triton kernel, GPU-only, falls back if absent).
-    delta_backend: str = "reference"
+    # Delta-rule backend: "auto" (fla on GPU if available, else reference),
+    # "reference" (pure-PyTorch chunked solve), or "fla" (flash-linear-attention).
+    delta_backend: str = "auto"
     # Component ablation toggles for DeltaBlock
     delta_out_gate: bool = True  # If False, disables multiplicative output gating (o * gate)
     delta_memoryless: bool = (
@@ -110,9 +110,9 @@ class ENGRAMConfig:
             raise ValueError(f"ssm_kind must be 'ssd' or 's4d_legacy', got {self.ssm_kind!r}")
         if self.s4d_init not in ("lin", "legacy"):
             raise ValueError(f"s4d_init must be 'lin' or 'legacy', got {self.s4d_init!r}")
-        if self.delta_backend not in ("reference", "fla"):
+        if self.delta_backend not in ("reference", "fla", "auto"):
             raise ValueError(
-                f"delta_backend must be 'reference' or 'fla', got {self.delta_backend!r}"
+                f"delta_backend must be 'reference', 'fla', or 'auto', got {self.delta_backend!r}"
             )
         if self.scan_backend not in ("auto", "assoc", "reference"):
             raise ValueError(

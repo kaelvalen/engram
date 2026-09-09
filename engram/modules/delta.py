@@ -74,6 +74,10 @@ class GatedDeltaRule(nn.Module):
             raise ValueError("hidden_dim must be divisible by num_heads")
         if chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
+        if backend == "auto":
+            backend = (
+                "fla" if torch.cuda.is_available() and _load_fla() is not None else "reference"
+            )
         if backend not in ("reference", "fla"):
             raise ValueError(f"unknown delta backend: {backend!r}")
         self.hidden_dim = hidden_dim
