@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -215,8 +216,9 @@ class Trainer:
             improved = current > best_val + self.tcfg.early_stopping_min_delta
             if improved:
                 best_val = current
+                best_path = output_dir / best_filename
                 save_checkpoint(
-                    output_dir / best_filename,
+                    best_path,
                     epoch=epoch,
                     model_state=self._model_state_dict(),
                     cfg=self.cfg,
@@ -228,19 +230,20 @@ class Trainer:
                 )
                 if patience_left is not None:
                     patience_left = self.tcfg.early_stopping_patience
-
-            # Always save a latest checkpoint for resumption / crash recovery.
-            save_checkpoint(
-                output_dir / "last.pt",
-                epoch=epoch,
-                model_state=self._model_state_dict(),
-                cfg=self.cfg,
-                metrics=dict(metrics),
-                optimizer_state=opt.state_dict(),
-                scheduler_state=sched.state_dict(),
-                rng_state=get_rng_state(),
-                global_step=global_step,
-            )
+                shutil.copyfile(best_path, output_dir / "last.pt")
+            else:
+                # Always save a latest checkpoint for resumption / crash recovery.
+                save_checkpoint(
+                    output_dir / "last.pt",
+                    epoch=epoch,
+                    model_state=self._model_state_dict(),
+                    cfg=self.cfg,
+                    metrics=dict(metrics),
+                    optimizer_state=opt.state_dict(),
+                    scheduler_state=sched.state_dict(),
+                    rng_state=get_rng_state(),
+                    global_step=global_step,
+                )
 
             if (
                 self.tcfg.early_stopping_patience is not None
