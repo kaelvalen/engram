@@ -67,7 +67,7 @@ def train_epoch(
     return total_loss / n, total_acc / n
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_epoch(
     model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
@@ -94,7 +94,7 @@ def evaluate_epoch(
     return total_loss / n, total_acc / n
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_macro_auc(
     model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
@@ -126,7 +126,7 @@ def evaluate_macro_auc(
     return roc_auc_ovr_macro(logits, labels, num_classes)
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_multilabel_auc(
     model: ENGRAMForClassification,
     loader: torch.utils.data.DataLoader,
