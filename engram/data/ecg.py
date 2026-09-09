@@ -217,9 +217,9 @@ def get_ecg_loaders(
     num_workers: int = 4,
     multilabel: bool = False,
     task: str = "superdiag",
-    normalize_eps: float = 1e-8,
     seed: int | None = None,
     include_test: bool = True,
+    pin_memory: bool = True,
 ) -> tuple[DataLoader, DataLoader, DataLoader | None]:
     kw = dict(
         window_size=window_size,
@@ -242,6 +242,7 @@ def get_ecg_loaders(
             num_workers=num_workers,
             worker_init_fn=worker_init,
             generator=generator,
+            pin_memory=pin_memory,
         ),
         DataLoader(
             val,
@@ -250,6 +251,7 @@ def get_ecg_loaders(
             num_workers=num_workers,
             worker_init_fn=worker_init,
             generator=generator,
+            pin_memory=pin_memory,
         ),
         DataLoader(
             test,
@@ -258,6 +260,7 @@ def get_ecg_loaders(
             num_workers=num_workers,
             worker_init_fn=worker_init,
             generator=generator,
+            pin_memory=pin_memory,
         )
         if test is not None
         else None,

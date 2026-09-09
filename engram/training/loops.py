@@ -46,8 +46,8 @@ def train_epoch(
     total_loss, total_acc, n = 0.0, 0.0, 0
 
     for step, (x, labels) in enumerate(loader):
-        x, labels = x.to(device), labels.to(device)
-        optimizer.zero_grad()
+        x, labels = x.to(device, non_blocking=True), labels.to(device, non_blocking=True)
+        optimizer.zero_grad(set_to_none=True)
         with _autocast(device, amp_dtype):
             out = model(x, modality=modality, labels=labels)
         out["loss"].backward()
@@ -80,7 +80,7 @@ def evaluate_epoch(
     total_loss, total_acc, n = 0.0, 0.0, 0
 
     for x, labels in loader:
-        x, labels = x.to(device), labels.to(device)
+        x, labels = x.to(device, non_blocking=True), labels.to(device, non_blocking=True)
         with _autocast(device, amp_dtype):
             out = model(x, modality=modality, labels=labels)
 
@@ -114,7 +114,7 @@ def evaluate_macro_auc(
     model.train(False)
     all_logits, all_labels = [], []
     for x, labels in loader:
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
         with _autocast(device, amp_dtype):
             out = model(x, modality=modality)
         all_logits.append(out["logits"].float().cpu())
@@ -144,7 +144,7 @@ def evaluate_multilabel_auc(
     model.train(False)
     all_scores, all_targets = [], []
     for x, labels in loader:
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
         with _autocast(device, amp_dtype):
             out = model(x, modality=modality)
         all_scores.append(torch.sigmoid(out["logits"].float()).cpu())
