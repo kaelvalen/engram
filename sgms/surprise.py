@@ -61,7 +61,9 @@ class SurprisePredictor(nn.Module):
 
     def _shift(self, x: torch.Tensor) -> torch.Tensor:
         """x_prev_t = x_{t-1}; position 0 zero-padded (predicts from <start>)."""
-        return torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], dim=1)
+        out = torch.zeros_like(x)
+        out[:, 1:] = x[:, :-1]
+        return out
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x: [B, T, D]; returns centered, signed surprise [B, T] from the EMA
