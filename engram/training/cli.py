@@ -47,6 +47,8 @@ def _cfg_kwargs(args: argparse.Namespace) -> dict:
         conv_kernel_size=args.conv_kernel_size,
         ffn_expand=args.ffn_expand,
         pool_type=args.pool_type,
+        delta_out_gate=getattr(args, "delta_out_gate", True),
+        delta_memoryless=getattr(args, "delta_memoryless", False),
     )
     layer_pattern = getattr(args, "layer_pattern", None)
     if layer_pattern:
@@ -415,6 +417,18 @@ def main(argv: list[str] | None = None) -> None:
         default="mean",
         choices=["mean", "last"],
         help="Pooling strategy: 'mean' (mean over T) or 'last' (last token).",
+    )
+    parser.add_argument(
+        "--delta-out-gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable multiplicative output gating in DeltaBlock. --no-delta-out-gate disables it (ablation).",
+    )
+    parser.add_argument(
+        "--delta-memoryless",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Zero out recurrent state in DeltaBlock (instantaneous linear attention ablation).",
     )
     parser.add_argument(
         "--data-root",
