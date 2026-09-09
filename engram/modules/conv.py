@@ -5,6 +5,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# Optional causal_conv1d fast path (CUDA-only).
+_CAUSAL_CONV1D_FN = None
+_CAUSAL_CONV1D_CHECKED = False
+
+
+def _load_causal_conv1d():
+    global _CAUSAL_CONV1D_FN, _CAUSAL_CONV1D_CHECKED
+    if not _CAUSAL_CONV1D_CHECKED:
+        _CAUSAL_CONV1D_CHECKED = True
+        try:
+            from causal_conv1d import causal_conv1d_fn
+
+            _CAUSAL_CONV1D_FN = causal_conv1d_fn
+        except Exception:
+            _CAUSAL_CONV1D_FN = None
+    return _CAUSAL_CONV1D_FN
+
+
 class ShortCausalConv1d(nn.Module):
     """Short causal 1D convolution.
 
@@ -34,6 +52,16 @@ class ShortCausalConv1d(nn.Module):
         xt = x.transpose(1, 2)  # [B, dim, T]
 
         if conv_state is None:
+            fn = _load_causal_conv1d()
+            if x.is_cuda and fn is not None:
+                try:
+                    w = self.conv.weight.squeeze(1)
+                    b = self.conv.bias
+                    out = fn(xt, w, b, activation=None)
+                    new_state = xt[:, :, -(self.kernel_size - 1) :]
+                    return out.transpose(1, 2), new_state
+                except Exception:
+                    pass
             # Prefill: zero-padding on the left
             pad = self.kernel_size - 1
             xt_padded = F.pad(xt, (pad, 0))
