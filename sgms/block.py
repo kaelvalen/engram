@@ -116,31 +116,89 @@ class SGMSBlock(nn.Module):
 
         updates = ExpertStateDict({(i, CONV_KEY): conv_new})
         if self.cfg.execution_mode == "gathered":
-            B, _, _ = x_c.shape
+            B, _, D = x_c.shape
             y = torch.zeros_like(x_c)
             for e, (name, expert) in enumerate(self.experts.items()):
                 st_in = states.get((i, name)) if states is not None else None
-                st_out_list = []
-                for b in range(B):
-                    st_in_b = slice_expert_state(st_in, b)
-                    m_b = routing.mask[b, :, e] > 0.5
-                    active_idx = torch.where(m_b)[0]
+                if B == 1:
+                    # B=1 fast path: direct forward without batch slicing or state concatenation
+                    m_0 = routing.mask[0, :, e]
+                    active_idx = torch.where(m_0)[0]
                     if active_idx.numel() > 0:
-                        x_sub = x_c[b : b + 1, active_idx]
-                        y_sub, st_out_b = expert_forward(
-                            name, expert, x_sub, st_in_b, None, self.cfg
+                        x_sub = x_c[:, active_idx]
+                        y_sub, st_out = expert_forward(
+                            name, expert, x_sub, st_in, None, self.cfg
                         )
-                        gate_sub = routing.gates[b : b + 1, active_idx, e : e + 1]
-                        y[b, active_idx] += (y_sub * gate_sub).squeeze(0)
-                        st_out_list.append(st_out_b)
+                        gate_sub = routing.gates[:, active_idx, e : e + 1]
+                        y[0, active_idx] += (y_sub * gate_sub).squeeze(0)
+                        updates[(i, name)] = st_out
                     else:
-                        if st_in_b is not None:
-                            st_out_list.append(st_in_b)
-                        else:
-                            st_out_list.append(
-                                expert_empty_state(name, expert, 1, x_c.device, x_c.dtype)
+                        updates[(i, name)] = (
+                            st_in
+                            if st_in is not None
+                            else expert_empty_state(name, expert, 1, x_c.device, x_c.dtype)
+                        )
+                else:
+                    # B > 1 batched packed dispatch: consolidate all B batch elements into
+                    # a single expert kernel launch instead of B separate kernel launches.
+                    active_indices = [torch.where(routing.mask[b, :, e])[0] for b in range(B)]
+                    lens = [idx.numel() for idx in active_indices]
+                    max_len = max(lens)
+                    if max_len == 0:
+                        updates[(i, name)] = (
+                            st_in
+                            if st_in is not None
+                            else expert_empty_state(name, expert, B, x_c.device, x_c.dtype)
+                        )
+                    elif all(l == max_len for l in lens):
+                        # Uniform active lengths: direct batched gather
+                        x_packed = torch.stack([x_c[b, active_indices[b]] for b in range(B)], dim=0)
+                        y_packed, st_out = expert_forward(
+                            name, expert, x_packed, st_in, None, self.cfg
+                        )
+                        for b in range(B):
+                            y[b, active_indices[b]] += (
+                                y_packed[b] * routing.gates[b, active_indices[b], e : e + 1]
                             )
-                updates[(i, name)] = cat_expert_states(st_out_list)
+                        updates[(i, name)] = st_out
+                    elif name in ("ssd", "gdr"):
+                        # Padded packed execution: single kernel call for full batch, freezing decay on padding
+                        x_packed = torch.zeros(B, max_len, D, device=x_c.device, dtype=x_c.dtype)
+                        pack_mask = torch.zeros(B, max_len, device=x_c.device, dtype=torch.bool)
+                        for b in range(B):
+                            if lens[b] > 0:
+                                x_packed[b, : lens[b]] = x_c[b, active_indices[b]]
+                                pack_mask[b, : lens[b]] = True
+                        y_packed, st_out = expert_forward(
+                            name, expert, x_packed, st_in, pack_mask, self.cfg
+                        )
+                        for b in range(B):
+                            if lens[b] > 0:
+                                y[b, active_indices[b]] += (
+                                    y_packed[b, : lens[b]] * routing.gates[b, active_indices[b], e : e + 1]
+                                )
+                        updates[(i, name)] = st_out
+                    else:
+                        # Fallback slice-by-batch for experts without masked padding support
+                        st_out_list = []
+                        for b in range(B):
+                            st_in_b = slice_expert_state(st_in, b)
+                            if lens[b] > 0:
+                                x_sub = x_c[b : b + 1, active_indices[b]]
+                                y_sub, st_out_b = expert_forward(
+                                    name, expert, x_sub, st_in_b, None, self.cfg
+                                )
+                                gate_sub = routing.gates[b : b + 1, active_indices[b], e : e + 1]
+                                y[b, active_indices[b]] += (y_sub * gate_sub).squeeze(0)
+                                st_out_list.append(st_out_b)
+                            else:
+                                if st_in_b is not None:
+                                    st_out_list.append(st_in_b)
+                                else:
+                                    st_out_list.append(
+                                        expert_empty_state(name, expert, 1, x_c.device, x_c.dtype)
+                                    )
+                        updates[(i, name)] = cat_expert_states(st_out_list)
         else:
             outs = []
             for e, (name, expert) in enumerate(self.experts.items()):

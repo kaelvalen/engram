@@ -130,7 +130,7 @@ def test_time_averaged_utilization_matches_counts():
     util = time_averaged_utilization(out["routings"])
     assert util.shape == (2, 2)
     for layer, r in enumerate(out["routings"]):
-        expected = r.mask.mean(dim=(0, 1)).numpy()
+        expected = r.mask.float().mean(dim=(0, 1)).numpy()
         np.testing.assert_allclose(util[layer], expected, rtol=1e-6)
 
 
