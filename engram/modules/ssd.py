@@ -190,8 +190,8 @@ class SSDMixer(nn.Module):
 
         # Contract the state dimension without materializing the full
         # [B,T,H,P,N] broadcast product (saves memory on long sequences).
-        y = torch.einsum("bthpn,bthn->bthp", h, Cc)  # [B,T,H,P]
-        y = y + self.D.view(1, 1, H, 1) * xv
+        y = torch.einsum("bthpn,bthn->bthp", h, _acc(Cc))  # [B,T,H,P]
+        y = y + self.D.view(1, 1, H, 1) * _acc(xv)
         return y.reshape(B, T, self.hidden_dim).to(x.dtype), h_new
 
     def forward(
@@ -259,7 +259,7 @@ class SSDMixer(nn.Module):
             b_scan = b_scan.clone()
             b_scan[:, 0] = b_scan[:, 0] + a_scan[:, 0] * h0.reshape(B * H * P, N)
         h = seq_recurrence(a_scan, b_scan).reshape(B, H, P, T, N).permute(0, 3, 1, 2, 4)
-        y = torch.einsum("bthpn,bthn->bthp", h, Cc) + self.D.view(1, 1, H, 1) * xv
+        y = torch.einsum("bthpn,bthn->bthp", h, _acc(Cc)) + self.D.view(1, 1, H, 1) * _acc(xv)
         y = y.reshape(B, T, self.hidden_dim).to(x.dtype)
         gate = F.silu(self.gate_proj(x))
         return self.out_proj(y * gate), h[:, -1]
