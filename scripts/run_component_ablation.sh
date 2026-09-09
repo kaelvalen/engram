@@ -37,27 +37,27 @@ for SEED in $SEEDS; do
   # ----- Control: full hybrid model -----
   run "full_hybrid"       "$SEED" --ssm-kind ssd
 
-  # ----- Architecture ablations (already in main benchmark, but repeated here for consistency) -----
+  # ----- Component 4: Matrix Key-Value Memory vs Vector SSM State -----
   run "ssd_only"          "$SEED" --ssm-kind ssd --block-pattern s4
   run "delta_only"        "$SEED" --block-pattern delta
 
-  # ----- Component ablations: remove one component at a time -----
-
-  # No short causal conv (tests if local mixing helps the SSM)
+  # ----- Component 1: Local Context (LocalConv) -----
   run "no_conv"           "$SEED" --ssm-kind ssd --conv-kernel-size 0
 
-  # No SwiGLU FFN (tests if per-position nonlinear expansion matters)
+  # ----- Component 2: Multiplicative Output Gating (GatedFusion) -----
+  run "no_out_gate"       "$SEED" --ssm-kind ssd --no-delta-out-gate
+
+  # ----- Component 3: Recurrent State Memory (RecurrentState vs Memoryless) -----
+  run "delta_memoryless"  "$SEED" --block-pattern delta --delta-memoryless
+
+  # ----- Component 5: Token-wise Capacity (SwiGLU FFN) -----
   run "no_ffn"            "$SEED" --ssm-kind ssd --ffn-expand 0
 
-  # No conv AND no FFN (pure mixer backbone, maximally ablated)
-  run "no_conv_no_ffn"    "$SEED" --ssm-kind ssd --conv-kernel-size 0 --ffn-expand 0
+  # ----- Combined Ablation -----
+  run "pure_recurrent"    "$SEED" --ssm-kind ssd --conv-kernel-size 0 --ffn-expand 0
 
-  # Pooling: last token instead of mean
+  # ----- Pooling strategy -----
   run "pool_last"         "$SEED" --ssm-kind ssd --pool-type last
-
-  # ----- Dropout ablation -----
-  run "dropout_0.1"       "$SEED" --ssm-kind ssd --dropout 0.1
-  run "dropout_0.2"       "$SEED" --ssm-kind ssd --dropout 0.2
 done
 
 echo ""

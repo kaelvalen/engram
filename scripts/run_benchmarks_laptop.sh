@@ -53,9 +53,15 @@ for SEED in $SEEDS; do
   run "engram_legacy_ecg"    "$SEED" --modality ecg --ssm-kind s4d_legacy --s4d-init lin
 
   # 1D CNN / Transformer baselines (same window + multi-label protocol).
+  # 1. Standard ResNet1D (~127k params - efficiency reference)
   python scripts/train_baseline.py --model resnet1d --task ecg --epochs "$EPOCHS" --seed "$SEED" \
     --window-size 1000 --ecg-task superdiag --ecg-multilabel --data-root "$DATA_ROOT" \
     --output-dir "$RESULTS/resnet1d_ecg/seed$SEED" 2>&1 | tee "$RESULTS/resnet1d_ecg_seed${SEED}.log"
+  # 2. ResNet1D-Wide (~254k params - parameter-matched to engram_hybrid_ecg)
+  python scripts/train_baseline.py --model resnet1d --base-channels 92 --task ecg --epochs "$EPOCHS" --seed "$SEED" \
+    --window-size 1000 --ecg-task superdiag --ecg-multilabel --data-root "$DATA_ROOT" \
+    --output-dir "$RESULTS/resnet1d_wide_ecg/seed$SEED" 2>&1 | tee "$RESULTS/resnet1d_wide_ecg_seed${SEED}.log"
+  # 3. Transformer baseline
   python scripts/train_baseline.py --model transformer --task ecg --epochs "$EPOCHS" --seed "$SEED" \
     --window-size 1000 --ecg-task superdiag --ecg-multilabel --data-root "$DATA_ROOT" \
     --output-dir "$RESULTS/transformer_ecg/seed$SEED" 2>&1 | tee "$RESULTS/transformer_ecg_seed${SEED}.log"
