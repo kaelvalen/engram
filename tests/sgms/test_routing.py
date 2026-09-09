@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import torch
 from sgms.masking import topk_mask
-from sgms.router import RoutingOutput, TokenRouter
+from sgms.router import RoutingOutput, TokenRouter, routing_stats
 
 
 def _router(K=3, k=1, D=16, **kw):
@@ -261,3 +261,38 @@ def test_routing_output_shapes_contract():
     assert isinstance(out, RoutingOutput)
     assert out.gates.shape == out.mask.shape == (2, 5, 3)
     assert out.indices.shape == (2, 5, 2)
+
+
+# ---------------------------------------------------------------------------
+# routing statistics & entropy disambiguation (§6.1)
+# ---------------------------------------------------------------------------
+
+
+def test_routing_stats_entropy_metrics_k1():
+    r = _router(K=4, k=1)
+    out = r(torch.randn(2, 8, 16))
+    stats = routing_stats([out])
+
+    layer = stats["layers"][0]
+    assert "preselection_entropy" in layer
+    assert "selected_gate_entropy" in layer
+    assert "entropy" in layer
+
+    # Backward compatibility: entropy == preselection_entropy
+    assert layer["entropy"] == layer["preselection_entropy"]
+
+    # In k=1, selected gate is always 1.0 (0 entropy), while preselection softmax distribution has entropy > 0
+    assert layer["selected_gate_entropy"] == 0.0
+    assert layer["preselection_entropy"] > 0.0
+
+
+def test_routing_stats_entropy_metrics_k2():
+    r = _router(K=4, k=2)
+    out = r(torch.randn(2, 8, 16))
+    stats = routing_stats([out])
+
+    layer = stats["layers"][0]
+    # In k=2 with non-degenerate router weights, selected gates have positive entropy
+    assert layer["selected_gate_entropy"] > 0.0
+    assert layer["preselection_entropy"] > layer["selected_gate_entropy"]
+

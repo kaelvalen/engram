@@ -197,26 +197,36 @@ class TokenRouter(nn.Module):
 def routing_stats(routings: list[RoutingOutput]) -> dict:
     """First-class routing metrics (spec §6.1), computed per layer.
 
-    Returns per-layer expert utilization, routing entropy, gate confidence
-    (mean max-prob) and the minimum utilization (collapse detector, §6.4).
+    Returns per-layer expert utilization, routing entropy (preselection and gate),
+    gate confidence (mean max-prob) and the minimum utilization (collapse detector, §6.4).
     """
     layers = []
     for r in routings:
         util = r.mask.float().mean(dim=(0, 1))  # [K]
         if r.probs is not None:
             p = r.probs.clamp_min(1e-12)
-            entropy = -(p * p.log()).sum(-1).mean()
+            pre_entropy = -(p * p.log()).sum(-1).mean()
             confidence = r.probs.max(-1).values.mean()
         else:
-            entropy = torch.zeros(())
+            pre_entropy = torch.zeros(())
             confidence = torch.zeros(())
+
+        if r.gates is not None:
+            g = r.gates.clamp_min(1e-12)
+            gate_entropy = -(r.gates * g.log()).sum(-1).mean()
+        else:
+            gate_entropy = torch.zeros(())
+
         layers.append(
             {
                 "utilization": util.detach().cpu(),
-                "entropy": float(entropy),
-                "gate_confidence": float(confidence),
-                "min_utilization": float(util.min()),
+                "entropy": float(pre_entropy.detach()),
+                "preselection_entropy": float(pre_entropy.detach()),
+                "selected_gate_entropy": float(gate_entropy.detach()),
+                "gate_confidence": float(confidence.detach()),
+                "min_utilization": float(util.min().detach()),
             }
         )
     min_util = min(layer["min_utilization"] for layer in layers) if layers else 0.0
     return {"layers": layers, "min_utilization": min_util}
+
