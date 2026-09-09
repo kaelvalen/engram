@@ -47,3 +47,64 @@ def specialization_score(
         "null_mean": float(null.mean()),
         "null_std": float(null.std()),
     }
+
+
+def surprise_decile_specialization(
+    assignments: np.ndarray,
+    surprise: np.ndarray,
+    num_experts: int = 2,
+    num_bins: int = 10,
+) -> dict:
+    """Compute empirical expert selection probabilities per surprise decile.
+
+    Tests the mechanistic hypothesis: does token novelty (surprise) monotonically
+    steer routing toward associative memory (e.g. GDR) vs state-space decay (SSD)?
+
+    Returns:
+        bin_edges: list of float quantile boundaries
+        expert_probabilities: [num_bins, num_experts] matrix of P(expert | bin)
+        monotonicity_spearman: per-expert rank correlation across deciles
+    """
+    a = np.asarray(assignments).ravel()
+    s = np.asarray(surprise).ravel()
+    if a.shape != s.shape:
+        raise ValueError(f"shape mismatch: {a.shape} vs {s.shape}")
+    if a.size == 0:
+        return {
+            "bin_edges": [],
+            "expert_probabilities": [],
+            "monotonicity_spearman": [0.0] * num_experts,
+        }
+
+    quantiles = np.linspace(0.0, 1.0, num_bins + 1)
+    edges = np.quantile(s, quantiles)
+    edges[0] = edges[0] - 1e-6
+    edges[-1] = edges[-1] + 1e-6
+
+    bin_indices = np.digitize(s, edges[1:-1])
+    probs = np.zeros((num_bins, num_experts), dtype=np.float64)
+
+    for b in range(num_bins):
+        mask = bin_indices == b
+        n_b = mask.sum()
+        if n_b > 0:
+            for e in range(num_experts):
+                probs[b, e] = float((a[mask] == e).sum()) / float(n_b)
+        else:
+            probs[b, :] = 1.0 / num_experts
+
+    bin_ranks = np.arange(num_bins, dtype=np.float64)
+    correlations = []
+    for e in range(num_experts):
+        p_e = probs[:, e]
+        if p_e.std() == 0 or bin_ranks.std() == 0:
+            correlations.append(0.0)
+        else:
+            r = float(np.corrcoef(bin_ranks, p_e)[0, 1])
+            correlations.append(0.0 if np.isnan(r) else r)
+
+    return {
+        "bin_edges": edges.tolist(),
+        "expert_probabilities": probs.tolist(),
+        "monotonicity_spearman": correlations,
+    }

@@ -43,12 +43,13 @@ class SGMSConfig:
     # Shared expert (§3.7): one SSD instance always on, output added ungated.
     shared_expert: str | None = None  # None | "ssd"
 
-    # Masked-execution semantics (§3.4).  D1: decay applies on every step
-    # (default) or the state freezes on a miss.  For GDR the spec text
+    # Execution semantics (§3.4). D1: decay applies on every step
+    # (default) or the state freezes on a miss. For GDR the spec text
     # requires exact pass-through on a miss (its equations carry no α gate),
     # hence a separate default of False for ENGRAM's α forget gate.
     decay_on_skip: bool = True  # D1, applies to SSD's a_t
     gdr_decay_on_skip: bool = False  # applies to GDR's α_t (§3.4 pass-through)
+    execution_mode: str = "dense_masked"  # dense_masked (v1) | gathered (v2 sparse)
 
     # Stability objectives (§3.7)
     lambda_bal: float = 1e-2

@@ -17,7 +17,11 @@ from sgms.analysis.dynamics import (
 )
 from sgms.analysis.heatmaps import routing_assignments
 from sgms.analysis.knockout import knockout_evaluation, mqar_accuracy_metric
-from sgms.analysis.specialization import mutual_information, specialization_score
+from sgms.analysis.specialization import (
+    mutual_information,
+    specialization_score,
+    surprise_decile_specialization,
+)
 from sgms.baselines import build_model
 from sgms.config import SGMSConfig
 from sgms.tasks.mqar import MQARConfig, make_mqar_batch
@@ -198,3 +202,21 @@ def test_mqar_token_classes_align_with_layout():
     scored = labels != -100
     # the token *preceding* each scored position is a query
     assert (classes[:, :-1][scored[:, 1:]] == 3).all()
+
+
+def test_surprise_decile_specialization_monotonicity():
+    # Construct synthetic data where high surprise monotonically routes to expert 1 (GDR)
+    n = 1000
+    surprise = np.linspace(0.0, 1.0, n)
+    # Prob of expert 1 grows linearly with surprise
+    rng = np.random.default_rng(42)
+    p_expert1 = surprise
+    assignments = (rng.uniform(0.0, 1.0, n) < p_expert1).astype(int)
+
+    res = surprise_decile_specialization(assignments, surprise, num_experts=2, num_bins=10)
+    assert len(res["bin_edges"]) == 11
+    assert len(res["expert_probabilities"]) == 10
+    # Expert 1 should have strong positive Spearman correlation across deciles
+    assert res["monotonicity_spearman"][1] > 0.8
+    # Expert 0 should have strong negative Spearman correlation across deciles
+    assert res["monotonicity_spearman"][0] < -0.8

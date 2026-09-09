@@ -109,13 +109,31 @@ class SGMSBlock(nn.Module):
         x_c, conv_new = self.conv(x_n, conv_in)
 
         updates = ExpertStateDict({(i, CONV_KEY): conv_new})
-        outs = []
-        for e, (name, expert) in enumerate(self.experts.items()):
-            st_in = states.get((i, name)) if states is not None else None
-            y_e, st_out = expert_forward(name, expert, x_c, st_in, routing.mask[..., e], self.cfg)
-            updates[(i, name)] = st_out
-            outs.append(y_e)
-        y = combine_expert_outputs(outs, routing.gates)
+        if self.cfg.execution_mode == "gathered":
+            B, _, _ = x_c.shape
+            y = torch.zeros_like(x_c)
+            for b in range(B):
+                for e, (name, expert) in enumerate(self.experts.items()):
+                    st_in = states.get((i, name)) if states is not None else None
+                    active_idx = torch.nonzero(routing.mask[b, :, e] > 0.5, as_tuple=True)[0]
+                    if active_idx.numel() > 0:
+                        x_sub = x_c[b : b + 1, active_idx]
+                        y_sub, st_out = expert_forward(name, expert, x_sub, st_in, None, self.cfg)
+                        updates[(i, name)] = st_out
+                        gate_sub = routing.gates[b : b + 1, active_idx, e : e + 1]
+                        y[b, active_idx] += (y_sub * gate_sub).squeeze(0)
+                    else:
+                        updates[(i, name)] = st_in
+        else:
+            outs = []
+            for e, (name, expert) in enumerate(self.experts.items()):
+                st_in = states.get((i, name)) if states is not None else None
+                y_e, st_out = expert_forward(
+                    name, expert, x_c, st_in, routing.mask[..., e], self.cfg
+                )
+                updates[(i, name)] = st_out
+                outs.append(y_e)
+            y = combine_expert_outputs(outs, routing.gates)
 
         if self.shared is not None:
             st_in = states.get((i, SHARED_KEY)) if states is not None else None

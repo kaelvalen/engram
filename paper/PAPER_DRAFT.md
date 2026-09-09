@@ -92,17 +92,17 @@ Under this formulation, tokens with low surprise ($s_t \approx 0$) route prefere
 ### Benchmark Protocol and Statistical Rigor
 For PTB-XL ECG, evaluation utilizes macro one-vs-rest AUROC on 1000-timestep full waveforms across 3 seeds. Pairwise differences are tested via paired t-tests and Hedges' g effect sizes with Holm-Bonferroni corrections.
 
-Under an $N=3$ protocol, failure to reject the null hypothesis ($p \ge 0.05$) or small empirical effect sizes ($|g| < 0.2$) reflects low inferential power ($1 - \beta \approx 0.10$). Such results cannot support claims of equivalence. Establishing practical equivalence requires larger seed counts ($N \ge 10$) and Two One-Sided Tests (TOST) against an a priori practical equivalence margin.
+With N=3 seeds, post-hoc statistical power for detecting medium effect sizes (Cohen's d ≈ 0.5) is severely constrained (under 15% at α=0.05). Rather than drawing strong inferential boundaries from paired t-tests or claiming equivalence, we report seed-level means, standard deviations, individual seed values, and paired differences. We explicitly emphasize that failure to reject the null under N=3 reflects insufficient statistical power, not equivalence (which requires TOST against an a priori margin).
 
-| Architecture | Parameters | Val Macro-AUROC | Test Macro-AUROC | Evidence Classification (vs ResNet1D) |
-|---|---:|---:|---:|---|
-| `resnet1d` | 127k | 0.9024 ± 0.0008 | - | Reference Model |
-| `resnet1d_wide` | 255k | 0.9018 ± 0.0011 | - | Parameter-Matched Reference |
-| `gateddelta_only` | 185k | 0.8978 ± 0.0048 | 0.8908 ± 0.0013 | Inconclusive / No Detectable Difference (p=0.27) |
-| `engram_hybrid` | 258k | 0.8972 ± 0.0021 | 0.8929 ± 0.0022 | Inconclusive / Directional Trend (p=0.07) |
-| `engram_legacy` | 174k | 0.8968 ± 0.0024 | 0.8911 ± 0.0013 | Inconclusive / Directional Trend (p=0.09) |
-| `mamba2_only` | 282k | 0.8960 ± 0.0018 | 0.8907 ± 0.0048 | Statistically Lower (p=0.02) |
-| `transformer` | 3162k | 0.8822 ± 0.0016 | - | Statistically Lower (p=0.0008) |
+| Architecture | Parameters | Val Macro-AUROC | Seed 0 | Seed 1 | Seed 2 | Paired Δ (vs ResNet1D) |
+|---|---:|---:|---:|---:|---:|---:|
+| `resnet1d` | 127k | **0.9024 ± 0.0008** | 0.9032 | 0.9024 | 0.9016 | Reference Model |
+| `resnet1d_wide` | 255k | 0.9018 ± 0.0011 | 0.9029 | 0.9012 | 0.9013 | -0.0006 |
+| `gateddelta_only` | 185k | 0.8978 ± 0.0048 | 0.8894 | 0.8910 | 0.8919 | -0.0046 |
+| `engram_hybrid` | 258k | 0.8972 ± 0.0021 | 0.8909 | 0.8953 | 0.8925 | -0.0052 |
+| `engram_legacy` | 174k | 0.8968 ± 0.0024 | 0.8899 | 0.8910 | 0.8925 | -0.0056 |
+| `mamba2_only` | 282k | 0.8960 ± 0.0018 | 0.8866 | 0.8961 | 0.8895 | -0.0064 |
+| `transformer` | 3162k | 0.8822 ± 0.0016 | 0.8838 | 0.8806 | 0.8821 | -0.0202 |
 
 ### SGMS 11-Arm Ablation Matrix
 To isolate routing specialization from generic capacity, SGMS is structured into an 11-arm comparative matrix on the Multi-Query Associative Recall (MQAR) benchmark:
@@ -120,8 +120,15 @@ To isolate routing specialization from generic capacity, SGMS is structured into
 
 Contrasting `B4` vs `B5` evaluates whether dynamic token allocation outperforms static uniform distribution. `B4` vs `B6` determines whether learned assignments capture task structure rather than stochastic regularization. `B7` vs `B8` confirms whether surprise provides semantic signal rather than auxiliary scalar capacity.
 
-### Systems and Computational Tradeoffs
-In SGMS v1, all $K$ experts execute over full sequence length $T$, with outputs masked by routing gates ($K \times T$ total compute). This confirms mathematical correctness and dynamic path selection, but does not reduce FLOPs. Realizing computational efficiency requires SGMS v2 gathered execution: tokens assigned to expert $e$ are gathered into contiguous buffers ($T_e \le T$), processed through specialized Triton kernels, and scattered back to sequence order.
+### Mechanistic Routing Diagnostics: Surprise Deciles
+To verify whether the router learns genuine memory specialization rather than arbitrary assignment under STE gradients, we evaluate the empirical routing distribution conditioned on token information novelty:
+$$P(\text{route} = \text{GDR} \mid \text{surprise decile } d)$$
+Under the specialization hypothesis, routing probability to associative memory (GDR) must exhibit a monotonic increase across surprise deciles ($d \in [0, 9]$), measured via positive Spearman rank correlation. If the probability curve is flat or non-monotonic, the surprise feature fails to provide semantic memory steering.
+
+### Systems and Computational Tradeoffs: Dense Masked vs Gathered Execution
+SGMS supports two execution backends:
+1. **Dense Masked Execution (v1)**: All $K$ experts execute over the full sequence length $T$, with outputs masked by routing gates ($K \times T$ total compute). This validates mathematical correctness and dynamic path selection, but incurs full compute.
+2. **Gathered Execution (v2)**: Under expert-local event time semantics (`decay_on_skip=False`), tokens routed to expert $e$ are dynamically gathered into contiguous buffers ($T_e \le T$, with $\sum_e T_e = k \cdot T$), processed through the expert mixer, and scattered back to sequence order. This reduces expert token processing from $K \times T$ to $k \times T$ (a 50% compute reduction for $K=2, k=1$) while preserving exact numerical outputs ($< 10^{-5}$ max difference).
 
 ## 5. Conclusion
 
