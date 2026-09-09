@@ -24,7 +24,8 @@ def _cfg(**overrides):
         ssd_state_dim=4,
         delta_chunk_size=4,
         scan_backend="reference",
-        router_init_std=0.5,  # well-separated logits ⇒ stable top-k under FD eps
+        router_init_std=0.5,  # well-separated logits => stable top-k under FD eps
+        straight_through=False,  # FD gradcheck tests smooth local components; STE has surrogate backward
         **overrides,
     )
 

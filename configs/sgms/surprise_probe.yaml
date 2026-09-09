@@ -16,6 +16,7 @@ model:
   num_layers: 4
   experts: [ssd, gdr]
   top_k: 1
+  straight_through: true
   shared_expert: null
   decay_on_skip: true
   gdr_decay_on_skip: false

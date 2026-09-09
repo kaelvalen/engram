@@ -155,8 +155,8 @@ def test_random_mode_independent_of_input_values():
 # ---------------------------------------------------------------------------
 
 
-def test_k1_gate_path_has_no_gradient_by_default():
-    r = _router(K=2, k=1)
+def test_k1_gate_path_has_no_gradient_without_straight_through():
+    r = _router(K=2, k=1, straight_through=False)
     h = torch.randn(1, 4, 16)
     out = r(h)
     loss = (out.gates * torch.randn_like(out.gates)).sum()
@@ -180,6 +180,34 @@ def test_straight_through_preserves_forward_values():
     b.load_state_dict(a.state_dict())
     h = torch.randn(1, 4, 16)
     torch.testing.assert_close(a(h).gates, b(h).gates)
+
+
+def test_block_level_task_gradient_flow_k1():
+    from sgms.block import SGMSBlock
+    from sgms.config import SGMSConfig
+
+    # With straight_through=True (default), task loss propagates into router.weight
+    cfg_st = SGMSConfig(hidden_dim=16, num_heads=2, num_layers=1, top_k=1, straight_through=True)
+    block_st = SGMSBlock(cfg_st, layer_idx=0)
+    x = torch.randn(2, 4, 16)
+    y, _, _ = block_st(x)
+    loss = y.sum()
+    loss.backward()
+    assert block_st.router.weight.grad is not None
+    assert block_st.router.weight.grad.norm().item() > 1e-4
+
+    # Without straight_through, task loss cannot propagate through renormalised k=1 gate
+    cfg_no_st = SGMSConfig(
+        hidden_dim=16, num_heads=2, num_layers=1, top_k=1, straight_through=False
+    )
+    block_no_st = SGMSBlock(cfg_no_st, layer_idx=0)
+    y2, _, _ = block_no_st(x)
+    loss2 = y2.sum()
+    loss2.backward()
+    assert (
+        block_no_st.router.weight.grad is None
+        or block_no_st.router.weight.grad.norm().item() < 1e-6
+    )
 
 
 # ---------------------------------------------------------------------------

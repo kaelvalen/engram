@@ -227,8 +227,11 @@ def main():
             print("> Holm-Bonferroni correction. The models are indistinguishable at the")
             print(f"> current seed count (N={min(len(v) for v in by_config.values())}).")
             print(">")
-            print('> Honest claim: "The architectures perform within measurement noise of')
-            print('> each other; the hybrid variant shows lower seed variance."')
+            print('> Honest claim: "No statistically reliable difference was detected under the')
+            print("> current three-seed protocol. With N=3, statistical power is low (M=3 cannot")
+            print(
+                '> establish equivalence; true equivalence requires TOST with an explicit margin)."'
+            )
 
     # ---- JSON output ----
     if args.output:

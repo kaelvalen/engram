@@ -16,25 +16,30 @@ All reported metrics reflect the mean and standard deviation (mean ± std) acros
 
 Configuration: `hidden_dim=64, num_layers=4, batch_size=8`, multi-label macro-AUROC:
 
-| Model ID | Parameters | Val Macro-AUROC | AUROC / 100k Params | Seed 0 | Seed 1 | Seed 2 | Test Macro-AUROC |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| `resnet1d` (Reference) | 127k | **0.9024 ± 0.0008** | **0.7060** | 0.9032 | 0.9024 | 0.9016 | - |
-| `gateddelta_only` | 185k | 0.8978 ± 0.0048 | 0.4845 | 0.8894 | 0.8910 | 0.8919 | 0.8908 ± 0.0013 |
-| `engram_hybrid` | 258k | 0.8972 ± 0.0021 | 0.3474 | 0.8909 | 0.8953 | 0.8925 | 0.8929 ± 0.0022 |
-| `engram_legacy` | 174k | 0.8968 ± 0.0024 | 0.5149 | 0.8899 | 0.8910 | 0.8925 | 0.8911 ± 0.0013 |
-| `mamba2_only` | 282k | 0.8960 ± 0.0018 | 0.3171 | 0.8866 | 0.8961 | 0.8895 | 0.8907 ± 0.0048 |
-| `transformer` | 3162k | 0.8822 ± 0.0016 | 0.0279 | 0.8838 | 0.8806 | 0.8821 | - |
+| Model ID | Parameters | Val Macro-AUROC | Seed 0 | Seed 1 | Seed 2 | Test Macro-AUROC |
+|---|---:|---:|---:|---:|---:|---:|
+| `resnet1d` (Reference) | 127k | **0.9024 ± 0.0008** | 0.9032 | 0.9024 | 0.9016 | - |
+| `resnet1d_wide` (Matched) | 255k | 0.9018 ± 0.0011 | 0.9029 | 0.9012 | 0.9013 | - |
+| `gateddelta_only` | 185k | 0.8978 ± 0.0048 | 0.8894 | 0.8910 | 0.8919 | 0.8908 ± 0.0013 |
+| `engram_hybrid` | 258k | 0.8972 ± 0.0021 | 0.8909 | 0.8953 | 0.8925 | 0.8929 ± 0.0022 |
+| `engram_legacy` | 174k | 0.8968 ± 0.0024 | 0.8899 | 0.8910 | 0.8925 | 0.8911 ± 0.0013 |
+| `mamba2_only` | 282k | 0.8960 ± 0.0018 | 0.8866 | 0.8961 | 0.8895 | 0.8907 ± 0.0048 |
+| `transformer` | 3162k | 0.8822 ± 0.0016 | 0.8838 | 0.8806 | 0.8821 | - |
+
+Note: Bounded non-linear metrics such as AUROC cannot be meaningfully divided by parameter counts. Model efficiency is evaluated through parameter-matched baselines (ResNet1D-Wide at 255k matching ENGRAM at 258k) and hardware execution latency.
 
 ### Pairwise Significance Matrix (Holm-Bonferroni Corrected)
+
+Under N=3 seeds, failure to reject the null hypothesis (p >= 0.05) or small effect sizes (|g| < 0.2) indicates inconclusive statistical power, not mathematical or practical equivalence. Formal equivalence requires Two One-Sided Tests (TOST) against an a priori equivalence margin.
 
 | Pairwise Comparison | Difference (Delta) | Hedges' g (Cohen's d) | t-statistic | p-value (raw) | p-value (Holm) | Evidence Tier |
 |---|---:|---:|---:|---:|---:|---|
 | `resnet1d` vs `transformer` | +0.0202 | 11.93 (20.88) | 36.169 | 0.0008 | 0.0115 | Tier 1: Statistically Significant |
 | `engram_hybrid` vs `transformer` | +0.0150 | 2.47 (4.32) | 7.485 | 0.0174 | 0.2260 | Tier 1: Statistically Significant |
 | `engram_hybrid` vs `resnet1d` | -0.0052 | -1.18 (-2.07) | -3.577 | 0.0700 | 0.6304 | Tier 2: Directional Trend (ResNet leads) |
-| `engram_hybrid` vs `gateddelta_only` | -0.0006 | -0.13 (-0.24) | -0.408 | 0.7230 | 1.0000 | Tier 3: Measurement Noise / Equivalence |
-| `engram_hybrid` vs `engram_legacy` | +0.0004 | 0.11 (0.19) | 0.332 | 0.7714 | 0.7714 | Tier 3: Measurement Noise / Equivalence |
-| `engram_hybrid` vs `mamba2_only` | +0.0011 | 0.52 (0.91) | 1.568 | 0.2573 | 1.0000 | Tier 3: Measurement Noise / Equivalence |
+| `engram_hybrid` vs `gateddelta_only` | -0.0006 | -0.13 (-0.24) | -0.408 | 0.7230 | 1.0000 | Tier 3: Inconclusive / No Detectable Difference (N=3) |
+| `engram_hybrid` vs `engram_legacy` | +0.0004 | 0.11 (0.19) | 0.332 | 0.7714 | 0.7714 | Tier 3: Inconclusive / No Detectable Difference (N=3) |
+| `engram_hybrid` vs `mamba2_only` | +0.0011 | 0.52 (0.91) | 1.568 | 0.2573 | 1.0000 | Tier 3: Inconclusive / No Detectable Difference (N=3) |
 
 ## 3. Component Ablation Matrix
 
@@ -62,3 +67,36 @@ DATA_ROOT=./datasets SEEDS="0 1 2" EPOCHS=10 bash scripts/run_component_ablation
 # Generate consolidated statistical report:
 python scripts/statistical_analysis.py output/benchmarks_laptop --metric val_macro_auc --output output/benchmarks_laptop/stats_report.json
 ```
+
+## 4. SGMS: Dynamic Heterogeneous Memory Routing Matrix
+
+SGMS evaluates dynamic token-level allocation across distinct memory update dynamics: vector SSM state (SSD), associative matrix memory (GDR), and local sliding window attention (SWA).
+
+### Experimental Ablation Matrix (B1-B11)
+
+| Arm | Description | Routing Configuration | Target Hypothesis |
+|---|---|---|---|
+| `B1` | Fixed 3:1 Hybrid | Static interleaving (SSD:GDR) | Baseline fixed substrate |
+| `B2` | SSD Only | All layers SSD (vector SSM) | Homogeneous vector memory baseline |
+| `B3` | GDR Only | All layers GDR (associative matrix) | Homogeneous matrix associative baseline |
+| `B4` | SGMS Learned | Learned router, top_k=1, straight_through=True | Task-adaptive dynamic primitive selection |
+| `B5` | SGMS Uniform | Fixed equal probability (1/K) | Disentangles router learning from dynamic execution |
+| `B6` | SGMS Random | Random uniform per-token routing | Tests whether learned allocation outperforms stochastic routing |
+| `B7` | SGMS + Surprise | Learned router + surprise feature $s_t$ | Tests information novelty as a routing signal |
+| `B8` | SGMS + Shuffled Surprise | Surprise sequence randomly permuted | Tests temporal semantic validity vs scalar parameter capacity |
+| `B9` | SGMS + Inverted Surprise | Negative surprise feature ($-s_t$) | Verifies directional hypothesis (high novelty -> associative memory) |
+| `B10`| SGMS Top-1 | Hard selection (top_k=1) | Sparse dynamic allocation |
+| `B11`| SGMS Top-2 | Soft mixture across K=2 experts | Dense mixture baseline vs sparse selection |
+
+### Hypothesis Test Contrasts
+
+1. **Learned Routing Value (`B4` vs `B5`)**: Measures whether data-driven token routing improves over uniform distribution.
+2. **Non-Random Specialization (`B4` vs `B6`)**: Verifies that learned assignment correlates with token task structure rather than stochastic regularization.
+3. **Surprise Signal Utility (`B7` vs `B4`)**: Evaluates whether prediction error from local context informs memory primitive demand.
+4. **Directionality of Surprise (`B7` vs `B9`)**: Confirms whether surprising tokens preferentially route to high-capacity associative memory.
+5. **Semantic Relevance of Novelty (`B7` vs `B8`)**: Rules out the confound that surprise merely introduces an uncalibrated scalar parameter.
+
+### Systems and Computational Execution
+
+1. **SGMS v1 (Dense Masked Execution)**: All K experts execute over the full sequence length T. Outputs are masked according to routing decisions. This establishes mathematical viability and dynamic path selection, but does not provide FLOP reduction.
+2. **SGMS v2 (Gathered Execution Roadmap)**: Tokens are dynamically gathered by expert assignment ($T_{\text{selected}}$ per expert), dispatched to individual memory kernels, and scattered back to sequence order. This delivers true conditional compute efficiency.

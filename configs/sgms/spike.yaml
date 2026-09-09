@@ -18,6 +18,7 @@ model:
   num_layers: 4
   experts: [ssd, gdr]
   top_k: 1
+  straight_through: true
   shared_expert: null
   decay_on_skip: true        # D1 default
   gdr_decay_on_skip: false   # §3.4 exact pass-through on a miss

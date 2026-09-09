@@ -2,6 +2,8 @@
 
 A reference implementation evaluating a single hybrid SSD (Mamba-2) and Gated Delta Rule sequence backbone across 12-lead ECG (PTB-XL), speech (Speech Commands v2), and sequential images (CIFAR-10) without modality-specific structural modifications.
 
+Nomenclature Note: This repository evaluates continuous linear-recurrent memory and dynamic token routing (SGMS). It is independent of DeepSeek's 2026 work *Engram: Conditional Memory via Scalable Lookup* (which uses static hashed N-gram lookup tables).
+
 ## 1. Architecture and Methodology
 
 ### Model Variations and Configurations
@@ -103,15 +105,16 @@ python scripts/statistical_analysis.py output/benchmarks_laptop --metric val_mac
 
 ## 4. Metrics and Benchmarks
 
-### Test Set Results (RTX 5060, Seeds 0-2)
+### Test Set Results (RTX 5060, Seeds 0-2 for ECG)
 
-| Modality | Model ID | Parameters | Metric Type | Test Score (Mean ± Std) | Seed-level 95% CI | Metric / 100k Params | Evidence Tier (vs Reference) |
-|---|---|---:|---|---:|---|---:|---|
-| **ECG** | `resnet1d` | 127k | Macro-AUROC | 0.9024 ± 0.0008 | [0.9016, 0.9032] | **0.7060** | Reference Model |
-| **ECG** | `gateddelta_only` | 185k | Macro-AUROC | 0.8978 ± 0.0048 | [0.8934, 0.9029] | 0.4845 | Tier 3 (Measurement Noise / Equivalence) |
-| **ECG** | `engram_hybrid` | 258k | Macro-AUROC | 0.8972 ± 0.0021 | [0.8956, 0.8996] | 0.3474 | Tier 3 (Measurement Noise / Equivalence) |
-| **ECG** | `engram_legacy` | 174k | Macro-AUROC | 0.8968 ± 0.0024 | [0.8941, 0.8982] | 0.5149 | Tier 3 (Measurement Noise / Equivalence) |
-| **ECG** | `mamba2_only` | 282k | Macro-AUROC | 0.8960 ± 0.0018 | [0.8943, 0.8979] | 0.3171 | Tier 3 (Measurement Noise / Equivalence) |
-| **ECG** | `transformer` | 3162k | Macro-AUROC | 0.8822 ± 0.0016 | [0.8810, 0.8840] | 0.0279 | Tier 1 (Significantly Lower, p=0.0008) |
-| **Image** | `engram_image` | 255k | Top-1 Accuracy | 72.38% (Seed 0) | - | 0.2838 | Below CNN Baseline (~80% ResNet-18) |
-| **Audio** | `engram_audio` | 258k | Top-1 Accuracy | 92.07% (Seed 0) | - | 0.3568 | Matches CNN Baseline (~90% M5) |
+| Modality | Model ID | Parameters | Metric Type | Test Score (Mean ± Std) | Seed-level 95% CI | Evidence Tier (vs Reference) |
+|---|---|---:|---|---:|---|---|
+| **ECG** | `resnet1d` | 127k | Macro-AUROC | 0.9024 ± 0.0008 | [0.9016, 0.9032] | Reference Model |
+| **ECG** | `resnet1d_wide` | 255k | Macro-AUROC | 0.9018 ± 0.0011 | [0.9006, 0.9030] | Parameter-Matched Reference |
+| **ECG** | `gateddelta_only` | 185k | Macro-AUROC | 0.8978 ± 0.0048 | [0.8934, 0.9029] | Tier 3 (Inconclusive / No Detectable Difference, N=3) |
+| **ECG** | `engram_hybrid` | 258k | Macro-AUROC | 0.8972 ± 0.0021 | [0.8956, 0.8996] | Tier 3 (Inconclusive / No Detectable Difference, N=3) |
+| **ECG** | `engram_legacy` | 174k | Macro-AUROC | 0.8968 ± 0.0024 | [0.8941, 0.8982] | Tier 3 (Inconclusive / No Detectable Difference, N=3) |
+| **ECG** | `mamba2_only` | 282k | Macro-AUROC | 0.8960 ± 0.0018 | [0.8943, 0.8979] | Tier 3 (Inconclusive / No Detectable Difference, N=3) |
+| **ECG** | `transformer` | 3162k | Macro-AUROC | 0.8822 ± 0.0016 | [0.8810, 0.8840] | Tier 1 (Significantly Lower, p=0.0008) |
+| **Image** | `engram_image` | 255k | Top-1 Accuracy | 72.38% (Seed 0) | - | Below CNN Baseline (~80% ResNet-18) |
+| **Audio** | `engram_audio` | 258k | Top-1 Accuracy | 92.07% (Seed 0) | - | Matches CNN Baseline (~90% M5) |

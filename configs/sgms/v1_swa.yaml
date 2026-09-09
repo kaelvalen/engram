@@ -10,6 +10,7 @@ model:
   num_layers: 8
   experts: [ssd, gdr, swa]
   top_k: 1
+  straight_through: true
   swa_window: 512
   shared_expert: null
   decay_on_skip: true

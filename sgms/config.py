@@ -31,7 +31,9 @@ class SGMSConfig:
     router_bias: bool = False  # optional input-independent b_e (default off)
     router_init_std: float = 0.01  # W_r ~ N(0, 0.01²) - near-uniform init
     router_seed: int = 0  # generator seed for router_mode="random"
-    straight_through: bool = False  # ST gate estimator, R4 fallback
+    straight_through: bool = (
+        True  # ST gate estimator: ensures task gradient flows to router when top_k=1
+    )
     router_surprise_scale: float = 0.0  # >0: add [B,T] surprise feature to logits
     router_surprise_weight: tuple[float, ...] | None = None  # per-expert init (None=zeros)
     freeze_surprise_weight: bool = False  # Stage-0 probe: freeze surprise_weight

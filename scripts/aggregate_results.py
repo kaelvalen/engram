@@ -92,16 +92,19 @@ def classify_evidence_tier(
         p < 0.05 and |g| >= 0.5 and CI does not span 0.
     Tier 2 (Directional Trend / Inconclusive):
         p >= 0.05 or CI spans 0, but |g| >= 0.2.
-    Tier 3 (Measurement Noise / Practical Equivalence):
+    Tier 3 (Inconclusive / No Detectable Difference under N=3):
         |g| < 0.2 or |delta| <= MDE.
+        Note: Under small sample sizes (N=3), failure to reject the null (p >= 0.05)
+        or a small observed effect size does not establish equivalence. Equivalence
+        requires Two One-Sided Tests (TOST) against an a priori practical margin.
     """
     if not math.isnan(p_val) and p_val < 0.05 and not math.isnan(g_val) and abs(g_val) >= 0.5:
         if (ci_lo > 0 and ci_hi > 0) or (ci_lo < 0 and ci_hi < 0):
             return 1, "Tier 1: Significant & Substantial"
     if not math.isnan(g_val) and abs(g_val) < 0.2:
-        return 3, "Tier 3: Measurement Noise / Equivalence"
+        return 3, "Tier 3: Inconclusive / No Detectable Difference (N=3)"
     if not math.isnan(mde) and abs(delta_mean) <= mde:
-        return 3, "Tier 3: Measurement Noise / Equivalence"
+        return 3, "Tier 3: Inconclusive / No Detectable Difference (N=3)"
     return 2, "Tier 2: Directional Trend"
 
 
