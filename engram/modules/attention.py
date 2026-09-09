@@ -177,11 +177,13 @@ class SlidingWindowAttention(nn.Module):
         v = v.view(B, T, H, Dh).transpose(1, 2)
 
         m = write_mask.to(x.dtype)  # [B,T] in {0,1}
-        pos_prev = (
-            state.pos.to(x.device)
-            if state is not None
-            else torch.zeros(B, dtype=torch.long, device=x.device)
-        )
+        if state is not None:
+            if isinstance(state.pos, torch.Tensor):
+                pos_prev = state.pos.to(x.device)
+            else:
+                pos_prev = torch.full((B,), int(state.pos), dtype=torch.long, device=x.device)
+        else:
+            pos_prev = torch.zeros(B, dtype=torch.long, device=x.device)
         # Position along the expert's own stream: routed tokens take their
         # rank; unrouted tokens inherit the most recent routed position (or 0
         # before the first routed token).
